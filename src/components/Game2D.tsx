@@ -6,8 +6,8 @@ import { Vector3, Mesh, Group } from 'three';
 // Game configuration
 const MOVE_SPEED = 5;
 const LANE_COUNT = 5; // Number of lanes
-const JUMP_FORCE = 8;
-const GRAVITY = 15;
+const JUMP_FORCE = 10; // Increased jump force
+const GRAVITY = 25; // Increased gravity for faster fall
 const TUNNEL_SIZE = 5;
 const HOLE_COUNT = 20; // Number of holes to generate
 const BALL_RADIUS = TUNNEL_SIZE / 10; // 1/5 of tunnel width
@@ -43,18 +43,12 @@ export function Game2D() {
     const ballPosition = useRef(new Vector3(getLanePosition(2), 0, 0)); // Start in middle lane
     const ballVelocity = useRef(new Vector3(0, 0, 0));
     const isJumping = useRef(false);
+    const jumpCount = useRef(0); // Track number of jumps
     const isMoving = useRef(false);
     const targetX = useRef(getLanePosition(2));
 
     // Tunnel state
     const tunnelRef = useRef<Group>(null);
-
-    // Control state
-    const keys = useRef({
-        left: false,
-        right: false,
-        jump: false
-    });
 
     // Generate random holes in the floor
     const holes = useMemo(() => {
@@ -128,7 +122,11 @@ export function Game2D() {
     // Set up keyboard controls
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (gameOver || isMoving.current) return;
+            if (gameOver) return;
+
+            // Don't handle left/right when already moving
+            if (isMoving.current && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
+                e.key === 'a' || e.key === 'd')) return;
 
             // Move left (to previous lane)
             if ((e.key === 'ArrowLeft' || e.key === 'a') && currentLane > 0) {
@@ -146,17 +144,22 @@ export function Game2D() {
                 isMoving.current = true;
             }
 
-            // Jump with space (but only if on the ground)
-            if (e.key === ' ' && !isJumping.current) {
-                keys.current.jump = true;
-                isJumping.current = true;
-                ballVelocity.current.y = JUMP_FORCE;
+            // Jump with space (first or double jump)
+            if (e.key === ' ') {
+                if (!isJumping.current) {
+                    // First jump
+                    isJumping.current = true;
+                    jumpCount.current = 1;
+                    ballVelocity.current.y = JUMP_FORCE;
+                } else if (jumpCount.current === 1) {
+                    // Double jump
+                    jumpCount.current = 2;
+                    ballVelocity.current.y = JUMP_FORCE * 0.8; // Slightly less power on second jump
+                }
             }
         };
 
         const handleKeyUp = (e: KeyboardEvent) => {
-            if (e.key === ' ') keys.current.jump = false;
-
             // Restart the game with R key
             if (e.key === 'r' && gameOver) {
                 setGameOver(false);
@@ -164,6 +167,7 @@ export function Game2D() {
                 setCurrentLane(2);
                 targetX.current = getLanePosition(2);
                 isJumping.current = false;
+                jumpCount.current = 0;
                 isMoving.current = false;
                 ballVelocity.current.set(0, 0, 0);
                 if (tunnelRef.current) tunnelRef.current.position.z = 0;
@@ -219,6 +223,11 @@ export function Game2D() {
             // Apply gravity if jumping
             if (isJumping.current) {
                 ballVelocity.current.y -= GRAVITY * delta;
+
+                // Create small trail effect while jumping
+                if (Math.abs(ballVelocity.current.y) > 2) {
+                    // Add trail code here if desired
+                }
             }
 
             // Check floor collision (except when over holes)
@@ -227,6 +236,7 @@ export function Game2D() {
                 ballRef.current.position.y = floorY;
                 ballVelocity.current.y = 0;
                 isJumping.current = false;
+                jumpCount.current = 0; // Reset jump count when landing
             }
 
             // Check if ball fell out of the bottom
@@ -421,11 +431,11 @@ export function Game2D() {
             {!gameOver && score < 10 && (
                 <group position={[0, 0, -15]}>
                     <mesh position={[0, 0, 0]}>
-                        <planeGeometry args={[10, 4]} />
+                        <planeGeometry args={[10, 5]} />
                         <meshBasicMaterial color="#000033" opacity={0.8} transparent={true} />
                     </mesh>
                     <Text
-                        position={[0, 1, 0.1]}
+                        position={[0, 1.5, 0.1]}
                         color="white"
                         fontSize={0.5}
                         anchorX="center"
@@ -434,7 +444,7 @@ export function Game2D() {
                         Use LEFT / RIGHT arrows to switch lanes
                     </Text>
                     <Text
-                        position={[0, 0, 0.1]}
+                        position={[0, 0.5, 0.1]}
                         color="white"
                         fontSize={0.5}
                         anchorX="center"
@@ -443,8 +453,17 @@ export function Game2D() {
                         Press SPACE to jump
                     </Text>
                     <Text
-                        position={[0, -1, 0.1]}
+                        position={[0, -0.5, 0.1]}
                         color="#88ccff"
+                        fontSize={0.5}
+                        anchorX="center"
+                        anchorY="middle"
+                    >
+                        Press SPACE twice for double jump!
+                    </Text>
+                    <Text
+                        position={[0, -1.5, 0.1]}
+                        color="#ff8888"
                         fontSize={0.4}
                         anchorX="center"
                         anchorY="middle"
