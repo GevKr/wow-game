@@ -12,9 +12,9 @@ const TUNNEL_SIZE = 5; // Size of tunnel
 const TILE_SIZE = 1; // Size of floor/wall tiles
 const TUNNEL_LENGTH = 150; // Longer tunnel
 const BALL_RADIUS = 0.25; // Character size
-const FLOOR_COLORS = ["#1a3784", "#234090", "#2a499c", "#234090", "#1a3784"]; // Alternating colors
-const CEILING_COLOR = "#4371c6"; // Lighter blue for ceiling
-const WALL_COLOR = "#365bb5"; // Medium blue for walls
+const FLOOR_COLORS = ["#ff91c6", "#ff7fb8", "#ff69a9", "#ff7fb8", "#ff91c6"]; // Pink floor colors
+const CEILING_COLOR = "#ff4d94"; // Darker pink for ceiling
+const WALL_COLOR = "#ff8c42"; // Orange for walls
 
 // Lane positions
 const getLanePosition = (lane: number, totalLanes: number = 5) => {
@@ -453,6 +453,18 @@ export function Game2D() {
                     else if (tile.type === 'leftWall') rotation = [0, Math.PI / 2, 0];
                     else if (tile.type === 'rightWall') rotation = [0, -Math.PI / 2, 0];
 
+                    // Add depth-based color variation for gradient effect
+                    const depthFactor = Math.abs(tile.position[2]) / TUNNEL_LENGTH;
+
+                    // Add pulsing effect for walls
+                    let emissiveIntensity = 0.2 + depthFactor * 0.3;
+                    const useColor = tile.color;
+
+                    if (tile.type === 'leftWall' || tile.type === 'rightWall') {
+                        const pulseIntensity = Math.sin(tile.position[2] * 0.2) * 0.2 + 0.8;
+                        emissiveIntensity *= pulseIntensity;
+                    }
+
                     return (
                         <mesh
                             key={`tile-${tile.type}-${index}`}
@@ -461,10 +473,12 @@ export function Game2D() {
                         >
                             <planeGeometry args={tile.size} />
                             <meshStandardMaterial
-                                color={tile.color}
+                                color={useColor}
                                 side={DoubleSide}
                                 emissive={tile.color}
-                                emissiveIntensity={0.2}
+                                emissiveIntensity={emissiveIntensity}
+                                metalness={0.2}
+                                roughness={0.8 - depthFactor * 0.3}
                             />
                         </mesh>
                     );
