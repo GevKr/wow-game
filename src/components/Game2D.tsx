@@ -346,7 +346,7 @@ export function Game2D() {
             {/* Square tunnel */}
             <group ref={tunnelRef}>
                 {/* Generate tunnel segments */}
-                {Array.from({ length: 50 }).map((_, i) => (
+                {Array.from({ length: 20 }).map((_, i) => (
                     <group key={i} position={[0, 0, -i * 10]}>
                         {/* Floor with lane colors - replaced the continuous floor */}
                         {Array.from({ length: LANE_COUNT }).map((_, laneIndex) => {
@@ -369,37 +369,97 @@ export function Game2D() {
                             );
                         })}
 
-                        {/* Ceiling */}
-                        <mesh position={[0, TUNNEL_SIZE / 2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-                            <planeGeometry args={[TUNNEL_SIZE, 10]} />
-                            <meshStandardMaterial color={CEILING_COLOR} side={2} emissive={CEILING_COLOR} emissiveIntensity={0.2} />
-                        </mesh>
+                        {/* Ceiling tiled */}
+                        {Array.from({ length: 5 }).map((_, rowIndex) => {
+                            return Array.from({ length: 5 }).map((_, colIndex) => {
+                                const tileWidth = TUNNEL_SIZE / 5;
+                                const tileLength = 2; // Fewer, larger tiles
+                                const xPosition = -TUNNEL_SIZE / 2 + tileWidth / 2 + colIndex * tileWidth;
+                                const zPosition = -tileLength / 2 - rowIndex * tileLength;
 
-                        {/* Left wall */}
-                        <mesh position={[-TUNNEL_SIZE / 2, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
-                            <planeGeometry args={[TUNNEL_SIZE, 10]} />
-                            <meshStandardMaterial color={WALL_COLOR} side={2} emissive={WALL_COLOR} emissiveIntensity={0.2} />
-                        </mesh>
+                                return (
+                                    <mesh
+                                        key={`ceiling-tile-${rowIndex}-${colIndex}-${i}`}
+                                        position={[xPosition, TUNNEL_SIZE / 2, zPosition]}
+                                        rotation={[-Math.PI / 2, 0, 0]}
+                                    >
+                                        <planeGeometry args={[tileWidth * 0.95, tileLength * 0.95]} />
+                                        <meshStandardMaterial
+                                            color={CEILING_COLOR}
+                                            side={2}
+                                            emissive={CEILING_COLOR}
+                                            emissiveIntensity={0.2}
+                                        />
+                                    </mesh>
+                                );
+                            });
+                        }).flat()}
 
-                        {/* Right wall */}
-                        <mesh position={[TUNNEL_SIZE / 2, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
-                            <planeGeometry args={[TUNNEL_SIZE, 10]} />
-                            <meshStandardMaterial color={WALL_COLOR} side={2} emissive={WALL_COLOR} emissiveIntensity={0.2} />
-                        </mesh>
+                        {/* Left wall tiled */}
+                        {Array.from({ length: 5 }).map((_, rowIndex) => {
+                            return Array.from({ length: 5 }).map((_, colIndex) => {
+                                const tileHeight = TUNNEL_SIZE / 5;
+                                const tileWidth = 2; // Fewer, larger tiles
+                                const yPosition = -TUNNEL_SIZE / 2 + tileHeight / 2 + colIndex * tileHeight;
+                                const zPosition = -tileWidth / 2 - rowIndex * tileWidth;
+
+                                return (
+                                    <mesh
+                                        key={`left-wall-tile-${rowIndex}-${colIndex}-${i}`}
+                                        position={[-TUNNEL_SIZE / 2, yPosition, zPosition]}
+                                        rotation={[0, Math.PI / 2, 0]}
+                                    >
+                                        <planeGeometry args={[tileWidth * 0.95, tileHeight * 0.95]} />
+                                        <meshStandardMaterial
+                                            color={WALL_COLOR}
+                                            side={2}
+                                            emissive={WALL_COLOR}
+                                            emissiveIntensity={0.2}
+                                        />
+                                    </mesh>
+                                );
+                            });
+                        }).flat()}
+
+                        {/* Right wall tiled */}
+                        {Array.from({ length: 5 }).map((_, rowIndex) => {
+                            return Array.from({ length: 5 }).map((_, colIndex) => {
+                                const tileHeight = TUNNEL_SIZE / 5;
+                                const tileWidth = 2; // Fewer, larger tiles
+                                const yPosition = -TUNNEL_SIZE / 2 + tileHeight / 2 + colIndex * tileHeight;
+                                const zPosition = -tileWidth / 2 - rowIndex * tileWidth;
+
+                                return (
+                                    <mesh
+                                        key={`right-wall-tile-${rowIndex}-${colIndex}-${i}`}
+                                        position={[TUNNEL_SIZE / 2, yPosition, zPosition]}
+                                        rotation={[0, -Math.PI / 2, 0]}
+                                    >
+                                        <planeGeometry args={[tileWidth * 0.95, tileHeight * 0.95]} />
+                                        <meshStandardMaterial
+                                            color={WALL_COLOR}
+                                            side={2}
+                                            emissive={WALL_COLOR}
+                                            emissiveIntensity={0.2}
+                                        />
+                                    </mesh>
+                                );
+                            });
+                        }).flat()}
 
                         {/* Lane dividers on the floor */}
                         {laneDividers.map((xPos, index) => (
-                            Array.from({ length: 10 }).map((_, dashIndex) => (
+                            Array.from({ length: 5 }).map((_, dashIndex) => (
                                 <mesh
                                     key={`divider-${index}-${i}-${dashIndex}`}
                                     position={[
                                         xPos,
                                         -TUNNEL_SIZE / 2 + 0.03,
-                                        -dashIndex - (dashIndex * 0.5) // Space them out along the Z axis
+                                        -dashIndex * 2 // Wider spacing
                                     ]}
                                     rotation={[0, 0, 0]}
                                 >
-                                    <boxGeometry args={[0.03, 0.06, 0.3]} />
+                                    <boxGeometry args={[0.05, 0.06, 0.3]} />
                                     <meshBasicMaterial
                                         color={LANE_DIVIDER_COLOR}
                                     />
