@@ -21,7 +21,6 @@ const getLanePosition = (lane: number) => {
 // Tunnel colors
 const CEILING_COLOR = "#4371c6"; // Lighter blue for ceiling
 const WALL_COLOR = "#365bb5"; // Medium blue for walls
-const HOLE_COLOR = "#000033"; // Deep blue/black for holes
 const LANE_DIVIDER_COLOR = "#5a8be5"; // Brighter divider color for better visibility
 const LANE_COLORS = ["#1a3784", "#234090", "#2a499c", "#234090", "#1a3784"]; // Subtle alternating lane colors
 
@@ -83,14 +82,14 @@ export function Game2D() {
 
         const ballPos = ballRef.current.position;
 
-        // If ball is currently jumping and going up, it can't fall through holes
-        if (isJumping.current && ballVelocity.current.y > 0) return;
+        // If ball is currently moving upward during a jump, don't check for hole collisions
+        if (isJumping.current && ballVelocity.current.y > 2) return;
 
         // Ball's bottom point (considering radius)
         const ballBottom = ballPos.y - BALL_RADIUS;
 
         // Check if the ball is near the floor
-        if (ballBottom > -TUNNEL_SIZE / 2 + 0.3) return;
+        if (ballBottom > -TUNNEL_SIZE / 2 + 0.5) return;
 
         // Check each hole
         for (const hole of holes) {
@@ -104,13 +103,16 @@ export function Game2D() {
             const xDist = Math.abs(ballPos.x - holePos.x);
             const zDist = Math.abs(ballPos.z - holePos.z);
 
-            if (xDist < width / 2 && zDist < length / 2) {
+            if (xDist < width / 2 * 0.9 && zDist < length / 2 * 0.9) {
+                // Log for debugging
+                console.log("Ball over hole! Ball position:", ballPos.y, "TUNNEL_SIZE:", TUNNEL_SIZE);
+
                 // Ball is over a hole - make it fall
-                ballVelocity.current.y = -GRAVITY;
+                ballVelocity.current.y = -GRAVITY * 0.8;
                 isJumping.current = true;
 
                 // Check if the ball has fallen too far
-                if (ballPos.y < -TUNNEL_SIZE) {
+                if (ballPos.y < -TUNNEL_SIZE - 5) {
                     setGameOver(true);
                 }
 
@@ -413,17 +415,41 @@ export function Game2D() {
                     </group>
                 ))}
 
-                {/* Add holes in the floor */}
+                {/* Add holes in the floor with see-through effect */}
                 {holes.map((hole, index) => (
-                    <mesh
-                        key={`hole-${index}`}
-                        position={[hole.position[0], hole.position[1] - 1, hole.position[2]]}
-                    >
-                        <boxGeometry args={[hole.size[0], 2, hole.size[1]]} />
-                        <meshBasicMaterial
-                            color={HOLE_COLOR}
-                        />
-                    </mesh>
+                    <group key={`hole-group-${index}`}>
+                        {/* Main hole - slightly transparent to see space but still visible */}
+                        <mesh
+                            key={`hole-${index}`}
+                            position={[hole.position[0], hole.position[1] - 0.99, hole.position[2]]}
+                        >
+                            <boxGeometry args={[hole.size[0], 2, hole.size[1]]} />
+                            <meshBasicMaterial
+                                color="black"
+                                opacity={0.7}
+                                transparent={true}
+                                side={2}  // Render both sides 
+                            />
+                        </mesh>
+
+                        {/* Edge glow around hole for better visibility */}
+                        <mesh
+                            key={`hole-outline-${index}`}
+                            position={[hole.position[0], hole.position[1] + 0.01, hole.position[2]]}
+                            rotation={[Math.PI / 2, 0, 0]}
+                        >
+                            <ringGeometry args={[
+                                hole.size[0] / 2 * 0.95, // Inner radius slightly smaller than hole
+                                hole.size[0] / 2 + 0.05, // Outer radius slightly larger than hole
+                                32]}
+                            />
+                            <meshBasicMaterial
+                                color="#0066ff"
+                                transparent={true}
+                                opacity={0.8}
+                            />
+                        </mesh>
+                    </group>
                 ))}
             </group>
 
