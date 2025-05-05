@@ -230,6 +230,32 @@ export function Game2D() {
         }
     };
 
+    // Helper to ensure the player is properly attached to the current surface
+    const snapToSurface = () => {
+        if (!playerRef.current) return;
+
+        switch (currentSurface) {
+            case 'floor':
+                playerRef.current.position.y = -TUNNEL_SIZE / 2 + BALL_RADIUS;
+                playerVelocity.current.y = 0;
+                break;
+            case 'ceiling':
+                playerRef.current.position.y = TUNNEL_SIZE / 2 - BALL_RADIUS;
+                playerVelocity.current.y = 0;
+                break;
+            case 'leftWall':
+                playerRef.current.position.x = -TUNNEL_SIZE / 2 + BALL_RADIUS;
+                playerVelocity.current.x = 0;
+                break;
+            case 'rightWall':
+                playerRef.current.position.x = TUNNEL_SIZE / 2 - BALL_RADIUS;
+                playerVelocity.current.x = 0;
+                break;
+        }
+
+        isJumping.current = false;
+    };
+
     // Handle transition to a different surface
     const transitionToSurface = (newSurface: Surface) => {
         if (newSurface === currentSurface || !playerRef.current) return;
@@ -297,7 +323,7 @@ export function Game2D() {
         // Update surface after positioning the player
         setCurrentSurface(newSurface);
         targetCameraRotation.current = euler;
-        rotationProgress.current = 1.0; // 1 second duration for animation
+        rotationProgress.current = 1.0; // 1 second duration for animation (slower transition)
 
         // Set the appropriate target position based on current lane
         targetX.current = getLanePosition(currentLane);
@@ -305,7 +331,7 @@ export function Game2D() {
             targetY.current = getLanePosition(currentLane);
         }
 
-        // Reset player velocity
+        // Reset player velocity to prevent residual momentum
         playerVelocity.current.set(0, 0, 0);
         isJumping.current = false;
     };
@@ -385,6 +411,8 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetX.current = getLanePosition(newLane);
                             isMoving.current = true;
+                            // Ensure proper alignment with surface
+                            snapToSurface();
                         } else {
                             // At leftmost lane, climb the left wall
                             transitionToSurface('leftWall');
@@ -396,6 +424,8 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetX.current = getLanePosition(newLane);
                             isMoving.current = true;
+                            // Ensure proper alignment with surface
+                            snapToSurface();
                         } else {
                             // At rightmost lane, climb the right wall
                             transitionToSurface('rightWall');
@@ -412,6 +442,8 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetY.current = getLanePosition(newLane);
                             isMoving.current = true;
+                            // Ensure proper alignment with surface
+                            snapToSurface();
                         } else {
                             // At topmost lane of left wall, transition to floor
                             transitionToSurface('floor');
@@ -423,6 +455,8 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetY.current = getLanePosition(newLane);
                             isMoving.current = true;
+                            // Ensure proper alignment with surface
+                            snapToSurface();
                         }
                     }
                     break;
@@ -436,6 +470,8 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetY.current = getLanePosition(newLane);
                             isMoving.current = true;
+                            // Ensure proper alignment with surface
+                            snapToSurface();
                         } else {
                             // At bottom-most lane of right wall, transition to floor
                             transitionToSurface('floor');
@@ -447,6 +483,8 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetY.current = getLanePosition(newLane);
                             isMoving.current = true;
+                            // Ensure proper alignment with surface
+                            snapToSurface();
                         }
                     }
                     break;
@@ -508,10 +546,22 @@ export function Game2D() {
             const playerPos = playerRef.current.position;
             const gravityDir = getGravityDirection();
 
+            // Auto-move forward at consistent speed regardless of animation state
+            const forwardSpeed = MOVE_SPEED * delta;
+            tunnelPosition.current += forwardSpeed;
+
+            // Update score
+            setScore(Math.floor(tunnelPosition.current));
+
+            // Move player through tunnel
+            if (tunnelRef.current) {
+                tunnelRef.current.position.z = tunnelPosition.current;
+            }
+
             // Handle camera rotation animation
             if (rotationProgress.current > 0) {
-                // Smooth rotation transition
-                const step = Math.min(delta * 2, rotationProgress.current); // Slower animation (2 instead of 3)
+                // Very slow rotation for smoother transition
+                const step = Math.min(delta * 1.0, rotationProgress.current); // Much slower rotation
                 rotationProgress.current -= step;
 
                 // Interpolate rotation with easing (smoother transition)
@@ -526,13 +576,10 @@ export function Game2D() {
                 // Also adjust up vector for proper orientation
                 const rotMatrix = new Matrix4().makeRotationFromEuler(cameraRotation.current);
                 camera.up.set(0, 1, 0).applyMatrix4(rotMatrix);
+
+                // Only skip physics calculations during rotation
+                if (rotationProgress.current > 0.2) return;
             }
-
-            // Auto-move forward
-            tunnelPosition.current += MOVE_SPEED * delta;
-
-            // Update score
-            setScore(Math.floor(tunnelPosition.current));
 
             // Handle side movement (X axis for floor, Y axis for walls)
             if (isMoving.current) {
@@ -634,6 +681,18 @@ export function Game2D() {
                 }
             }
 
+            // If not jumping, ensure we're sticking to the current surface
+            // This helps prevent sliding after transitions
+            if (!isJumping.current && !isMoving.current && onSurface) {
+                if (collisionAxis === 'y') {
+                    playerPos.y = surfaceLevel;
+                    playerVelocity.current.y = 0;
+                } else {
+                    playerPos.x = surfaceLevel;
+                    playerVelocity.current.x = 0;
+                }
+            }
+
             // Check if player fell too far (in any direction)
             const outOfBounds =
                 playerPos.y < -TUNNEL_SIZE * 2 ||
@@ -644,11 +703,6 @@ export function Game2D() {
             if (outOfBounds) {
                 setGameState('gameOver');
                 setIsFallingThroughGap(false);
-            }
-
-            // Move player through tunnel
-            if (tunnelRef.current) {
-                tunnelRef.current.position.z = tunnelPosition.current;
             }
         }
 
