@@ -5,35 +5,46 @@ import { Vector3, Mesh, Group } from 'three';
 
 // Game configuration
 const MOVE_SPEED = 5;
-const SIDE_SPEED = 4;
+const LANE_COUNT = 5; // Number of lanes
 const JUMP_FORCE = 8;
 const GRAVITY = 15;
 const TUNNEL_SIZE = 5;
 const HOLE_COUNT = 20; // Number of holes to generate
 const BALL_RADIUS = TUNNEL_SIZE / 10; // 1/5 of tunnel width
 
+// Lane positions
+const getLanePosition = (lane: number) => {
+    const laneWidth = TUNNEL_SIZE / LANE_COUNT;
+    return -TUNNEL_SIZE / 2 + laneWidth / 2 + lane * laneWidth;
+};
+
 // Tunnel colors
-const FLOOR_COLOR = "#2a4494"; // Deeper blue for floor
 const CEILING_COLOR = "#4371c6"; // Lighter blue for ceiling
 const WALL_COLOR = "#365bb5"; // Medium blue for walls
 const HOLE_COLOR = "#000033"; // Deep blue/black for holes
+const LANE_DIVIDER_COLOR = "#5a8be5"; // Brighter divider color for better visibility
+const LANE_COLORS = ["#1a3784", "#234090", "#2a499c", "#234090", "#1a3784"]; // Subtle alternating lane colors
 
 // Create a type for our holes
 type Hole = {
     position: [number, number, number];
     size: [number, number];
+    lane: number; // The lane this hole is in (0-4)
 };
 
 export function Game2D() {
     const { camera } = useThree();
     const [score, setScore] = useState(0);
     const [gameOver, setGameOver] = useState(false);
+    const [currentLane, setCurrentLane] = useState(2); // Start in the middle lane (0-4)
 
     // Player state
     const ballRef = useRef<Mesh>(null);
-    const ballPosition = useRef(new Vector3(0, 0, 0));
+    const ballPosition = useRef(new Vector3(getLanePosition(2), 0, 0)); // Start in middle lane
     const ballVelocity = useRef(new Vector3(0, 0, 0));
     const isJumping = useRef(false);
+    const isMoving = useRef(false);
+    const targetX = useRef(getLanePosition(2));
 
     // Tunnel state
     const tunnelRef = useRef<Group>(null);
@@ -53,18 +64,19 @@ export function Game2D() {
             // Place holes deeper in the tunnel to give player time to start
             const zPosition = -30 - i * 20;
 
-            // Random position within the tunnel width (center-aligned)
-            const xPosition = Math.random() * (TUNNEL_SIZE * 0.8) - (TUNNEL_SIZE * 0.4);
+            // Randomly select a lane for this hole
+            const lane = Math.floor(Math.random() * LANE_COUNT);
+            const xPosition = getLanePosition(lane);
 
-            // Random size between 1/5 and 3/5 of tunnel width
-            const minSize = TUNNEL_SIZE / 5;
-            const maxSize = TUNNEL_SIZE * 3 / 5;
-            const width = minSize + Math.random() * (maxSize - minSize);
-            const length = 1 + Math.random() * 2; // Length of hole (in z direction)
+            // Random size (but smaller than a lane)
+            const laneWidth = TUNNEL_SIZE / LANE_COUNT;
+            const holeWidth = laneWidth * 0.8; // 80% of lane width
+            const holeLength = 1 + Math.random() * 2; // Length of hole (in z direction)
 
             result.push({
                 position: [xPosition, -TUNNEL_SIZE / 2, zPosition],
-                size: [width, length]
+                size: [holeWidth, holeLength],
+                lane
             });
         }
 
@@ -77,14 +89,14 @@ export function Game2D() {
 
         const ballPos = ballRef.current.position;
 
-        // If ball is currently jumping, it can't fall through holes
+        // If ball is currently jumping and going up, it can't fall through holes
         if (isJumping.current && ballVelocity.current.y > 0) return;
 
         // Ball's bottom point (considering radius)
         const ballBottom = ballPos.y - BALL_RADIUS;
 
-        // Only check for hole collisions if the ball is near the floor
-        if (Math.abs(ballBottom - (-TUNNEL_SIZE / 2)) > 0.2) return;
+        // Check if the ball is near the floor
+        if (ballBottom > -TUNNEL_SIZE / 2 + 0.3) return;
 
         // Check each hole
         for (const hole of holes) {
@@ -116,10 +128,23 @@ export function Game2D() {
     // Set up keyboard controls
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (gameOver) return;
+            if (gameOver || isMoving.current) return;
 
-            if (e.key === 'ArrowLeft' || e.key === 'a') keys.current.left = true;
-            if (e.key === 'ArrowRight' || e.key === 'd') keys.current.right = true;
+            // Move left (to previous lane)
+            if ((e.key === 'ArrowLeft' || e.key === 'a') && currentLane > 0) {
+                const newLane = currentLane - 1;
+                setCurrentLane(newLane);
+                targetX.current = getLanePosition(newLane);
+                isMoving.current = true;
+            }
+
+            // Move right (to next lane)
+            if ((e.key === 'ArrowRight' || e.key === 'd') && currentLane < LANE_COUNT - 1) {
+                const newLane = currentLane + 1;
+                setCurrentLane(newLane);
+                targetX.current = getLanePosition(newLane);
+                isMoving.current = true;
+            }
 
             // Jump with space (but only if on the ground)
             if (e.key === ' ' && !isJumping.current) {
@@ -130,19 +155,20 @@ export function Game2D() {
         };
 
         const handleKeyUp = (e: KeyboardEvent) => {
-            if (e.key === 'ArrowLeft' || e.key === 'a') keys.current.left = false;
-            if (e.key === 'ArrowRight' || e.key === 'd') keys.current.right = false;
             if (e.key === ' ') keys.current.jump = false;
 
             // Restart the game with R key
             if (e.key === 'r' && gameOver) {
                 setGameOver(false);
                 setScore(0);
+                setCurrentLane(2);
+                targetX.current = getLanePosition(2);
                 isJumping.current = false;
+                isMoving.current = false;
                 ballVelocity.current.set(0, 0, 0);
                 if (tunnelRef.current) tunnelRef.current.position.z = 0;
                 if (ballRef.current) {
-                    ballRef.current.position.x = 0;
+                    ballRef.current.position.x = getLanePosition(2);
                     ballRef.current.position.y = -1.5;
                 }
             }
@@ -155,7 +181,7 @@ export function Game2D() {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [gameOver]);
+    }, [currentLane, gameOver]);
 
     // Main game loop
     useFrame((state, delta) => {
@@ -171,12 +197,20 @@ export function Game2D() {
 
         // Handle ball movement based on keyboard input
         if (ballRef.current) {
-            // Move ball left/right
-            if (keys.current.left) {
-                ballRef.current.position.x -= SIDE_SPEED * delta;
-            }
-            if (keys.current.right) {
-                ballRef.current.position.x += SIDE_SPEED * delta;
+            // Handle lane movement smoothly
+            if (isMoving.current) {
+                const moveSpeed = 10; // Lanes per second
+                const step = moveSpeed * delta;
+                const diff = targetX.current - ballRef.current.position.x;
+
+                if (Math.abs(diff) <= step) {
+                    // We've reached the target position
+                    ballRef.current.position.x = targetX.current;
+                    isMoving.current = false;
+                } else {
+                    // Move toward the target
+                    ballRef.current.position.x += Math.sign(diff) * step;
+                }
             }
 
             // Handle jumping and gravity
@@ -198,15 +232,6 @@ export function Game2D() {
             // Check if ball fell out of the bottom
             if (ballRef.current.position.y < -TUNNEL_SIZE) {
                 setGameOver(true);
-            }
-
-            // Limit ball movement to tunnel boundaries on X-axis
-            const ballBoundary = TUNNEL_SIZE / 2 - BALL_RADIUS;
-            if (ballRef.current.position.x < -ballBoundary) {
-                ballRef.current.position.x = -ballBoundary;
-            }
-            if (ballRef.current.position.x > ballBoundary) {
-                ballRef.current.position.x = ballBoundary;
             }
 
             // Update the ball's position for collision detection
@@ -245,6 +270,20 @@ export function Game2D() {
 
         return false;
     };
+
+    // Generate lane divider positions
+    const laneDividers = useMemo(() => {
+        const dividers = [];
+        const laneWidth = TUNNEL_SIZE / LANE_COUNT;
+
+        // Create dividers between lanes (not at edges)
+        for (let i = 1; i < LANE_COUNT; i++) {
+            const xPosition = -TUNNEL_SIZE / 2 + i * laneWidth;
+            dividers.push(xPosition);
+        }
+
+        return dividers;
+    }, []);
 
     return (
         <>
@@ -287,7 +326,7 @@ export function Game2D() {
             )}
 
             {/* Ball */}
-            <mesh ref={ballRef} position={[0, -1.5, 0]}>
+            <mesh ref={ballRef} position={[getLanePosition(2), -1.5, 0]}>
                 <sphereGeometry args={[BALL_RADIUS, 32, 32]} />
                 <meshStandardMaterial color="#ff3030" emissive="#ff0000" emissiveIntensity={0.3} />
             </mesh>
@@ -297,11 +336,26 @@ export function Game2D() {
                 {/* Generate tunnel segments */}
                 {Array.from({ length: 50 }).map((_, i) => (
                     <group key={i} position={[0, 0, -i * 10]}>
-                        {/* Floor - now with continuous segments to handle holes */}
-                        <mesh position={[0, -TUNNEL_SIZE / 2, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                            <planeGeometry args={[TUNNEL_SIZE, 10]} />
-                            <meshStandardMaterial color={FLOOR_COLOR} side={2} emissive={FLOOR_COLOR} emissiveIntensity={0.2} />
-                        </mesh>
+                        {/* Floor with lane colors - replaced the continuous floor */}
+                        {Array.from({ length: LANE_COUNT }).map((_, laneIndex) => {
+                            const laneWidth = TUNNEL_SIZE / LANE_COUNT;
+                            const xPosition = getLanePosition(laneIndex);
+                            return (
+                                <mesh
+                                    key={`lane-${laneIndex}-${i}`}
+                                    position={[xPosition, -TUNNEL_SIZE / 2, 0]}
+                                    rotation={[Math.PI / 2, 0, 0]}
+                                >
+                                    <planeGeometry args={[laneWidth * 0.95, 10]} />
+                                    <meshStandardMaterial
+                                        color={LANE_COLORS[laneIndex]}
+                                        side={2}
+                                        emissive={LANE_COLORS[laneIndex]}
+                                        emissiveIntensity={0.2}
+                                    />
+                                </mesh>
+                            );
+                        })}
 
                         {/* Ceiling */}
                         <mesh position={[0, TUNNEL_SIZE / 2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -321,6 +375,20 @@ export function Game2D() {
                             <meshStandardMaterial color={WALL_COLOR} side={2} emissive={WALL_COLOR} emissiveIntensity={0.2} />
                         </mesh>
 
+                        {/* Lane dividers on the floor */}
+                        {laneDividers.map((xPos, index) => (
+                            <mesh
+                                key={`divider-${index}-${i}`}
+                                position={[xPos, -TUNNEL_SIZE / 2 + 0.05, 0]}
+                                rotation={[0, 0, 0]}
+                            >
+                                <boxGeometry args={[0.08, 0.1, 10]} />
+                                <meshBasicMaterial
+                                    color={LANE_DIVIDER_COLOR}
+                                />
+                            </mesh>
+                        ))}
+
                         {/* Add glowing grid lines on the floor to highlight edges */}
                         <mesh position={[0, -TUNNEL_SIZE / 2 + 0.01, -5]} rotation={[Math.PI / 2, 0, 0]}>
                             <planeGeometry args={[TUNNEL_SIZE, 0.1]} />
@@ -336,13 +404,8 @@ export function Game2D() {
                         position={[hole.position[0], hole.position[1] - 1, hole.position[2]]}
                     >
                         <boxGeometry args={[hole.size[0], 2, hole.size[1]]} />
-                        <meshPhongMaterial
+                        <meshBasicMaterial
                             color={HOLE_COLOR}
-                            side={2}
-                            opacity={1}
-                            emissive="#000011"
-                            emissiveIntensity={0.5}
-                            shininess={0}
                         />
                     </mesh>
                 ))}
@@ -362,7 +425,7 @@ export function Game2D() {
                         anchorX="center"
                         anchorY="middle"
                     >
-                        Use LEFT / RIGHT arrows to move
+                        Use LEFT / RIGHT arrows to switch lanes
                     </Text>
                     <Text
                         position={[0, 0, 0.1]}
