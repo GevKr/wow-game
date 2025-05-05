@@ -59,21 +59,41 @@ export function Game2D() {
 
         // Generate tiles for the tunnel
         for (let z = 0; z < length; z++) {
+            // Calculate difficulty based on distance (more gaps as player progresses)
+            // Start with easy difficulty and gradually increase
+            const difficulty = Math.min(0.7, 0.2 + (z / length) * 0.5);
+
             // Create a row of floor tiles
             for (let x = 0; x < totalLanes; x++) {
                 // Create a pattern of missing floor tiles to make visible gaps
                 let tileExists = true;
 
                 // Safe zone at start
-                if (z > 20) {
-                    // Create predictable patterns of missing tiles
+                if (z > 15) {
+                    // Increase gap frequency based on distance
                     if (z % 5 === 0) {
-                        // Every 5th row, remove alternating tiles
+                        // Alternating gaps every 5th row
                         tileExists = x % 2 !== 0;
                     }
                     else if (z % 12 === 0) {
-                        // Every 12th row, only keep middle tile
+                        // Only keep middle tile every 12th row
                         tileExists = x === 2;
+                    }
+                    // Random gaps based on difficulty
+                    else if (z > 30 && Math.random() < difficulty) {
+                        tileExists = false;
+                    }
+
+                    // Special patterns at significant milestones
+                    if (z % 50 === 0 && z > 50) {
+                        // Create a zigzag pattern for challenge
+                        tileExists = (x + z / 10) % 2 === 0;
+                    }
+
+                    // After z > 100, add more challenging patterns
+                    if (z > 100 && z % 20 === 0) {
+                        // Only leave edge tiles
+                        tileExists = (x === 0 || x === 4);
                     }
                 }
 
