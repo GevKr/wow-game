@@ -59,41 +59,81 @@ export function Game2D() {
 
         // Generate tiles for the tunnel
         for (let z = 0; z < length; z++) {
-            // Calculate difficulty based on distance (more gaps as player progresses)
-            // Start with easy difficulty and gradually increase
-            const difficulty = Math.min(0.7, 0.2 + (z / length) * 0.5);
+            // Create phases of difficulty instead of linear progression
+            let phaseDifficulty = 0;
+
+            // Safe zone at the start
+            if (z < 15) {
+                phaseDifficulty = 0; // No gaps
+            }
+            // Intro phase - few gaps
+            else if (z < 40) {
+                phaseDifficulty = 0.2;
+            }
+            // Medium sections with varying difficulty
+            else {
+                // Create wave patterns of difficulty that cycle
+                const cyclePosition = z % 50; // Difficulty cycles every 50 units
+
+                if (cyclePosition < 15) {
+                    // Easier section at beginning of cycle
+                    phaseDifficulty = 0.2;
+                } else if (cyclePosition < 35) {
+                    // Hard section in middle of cycle
+                    phaseDifficulty = 0.6;
+                } else {
+                    // Medium section at end of cycle
+                    phaseDifficulty = 0.4;
+                }
+
+                // Random difficulty spikes
+                if (z > 80 && Math.random() < 0.05) {
+                    // 5% chance of extra difficult section
+                    phaseDifficulty = 0.8;
+                }
+            }
 
             // Create a row of floor tiles
             for (let x = 0; x < totalLanes; x++) {
                 // Create a pattern of missing floor tiles to make visible gaps
                 let tileExists = true;
 
-                // Safe zone at start
+                // Pattern-based gaps
                 if (z > 15) {
-                    // Increase gap frequency based on distance
+                    // Create predictable patterns at intervals
                     if (z % 5 === 0) {
-                        // Alternating gaps every 5th row
+                        // Every 5th row has alternating tiles missing
                         tileExists = x % 2 !== 0;
                     }
-                    else if (z % 12 === 0) {
-                        // Only keep middle tile every 12th row
+                    else if (z % 15 === 0) {
+                        // Every 15th row only has middle lane
                         tileExists = x === 2;
                     }
-                    // Random gaps based on difficulty
-                    else if (z > 30 && Math.random() < difficulty) {
+                    // Random gaps based on phase difficulty
+                    else if (Math.random() < phaseDifficulty) {
                         tileExists = false;
                     }
 
-                    // Special patterns at significant milestones
-                    if (z % 50 === 0 && z > 50) {
-                        // Create a zigzag pattern for challenge
-                        tileExists = (x + z / 10) % 2 === 0;
+                    // Special challenge patterns
+                    if (z % 40 === 0 && z > 50) {
+                        // Create zigzag pattern
+                        tileExists = (x + Math.floor(z / 10)) % 2 === 0;
+                    }
+                    else if (z % 75 === 0 && z > 75) {
+                        // Only edge tiles exist - hard jump
+                        tileExists = (x === 0 || x === 4);
                     }
 
-                    // After z > 100, add more challenging patterns
-                    if (z > 100 && z % 20 === 0) {
-                        // Only leave edge tiles
-                        tileExists = (x === 0 || x === 4);
+                    // Ensure there's always at least one safe path
+                    const existingGapsInRow = tiles.filter(t =>
+                        t.type === 'floor' &&
+                        t.position[2] === -z &&
+                        !t.exists
+                    ).length;
+
+                    // Don't make all tiles in a row gaps (impossible to pass)
+                    if (!tileExists && existingGapsInRow >= totalLanes - 1) {
+                        tileExists = true;
                     }
                 }
 
