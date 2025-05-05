@@ -6,15 +6,16 @@ import { Vector3, Mesh, Group } from 'three';
 // Game configuration
 const MOVE_SPEED = 5;
 const SIDE_SPEED = 4;
+const JUMP_FORCE = 8;
+const GRAVITY = 15;
 const TUNNEL_SIZE = 5;
-const OBSTACLE_COUNT = 30; // Number of obstacles to generate
+const HOLE_COUNT = 20; // Number of holes to generate
 const BALL_RADIUS = TUNNEL_SIZE / 10; // 1/5 of tunnel width
 
-// Create a type for our obstacles
-type Obstacle = {
+// Create a type for our holes
+type Hole = {
     position: [number, number, number];
-    size: [number, number, number];
-    color: string;
+    size: [number, number];
 };
 
 export function Game2D() {
@@ -25,6 +26,8 @@ export function Game2D() {
     // Player state
     const ballRef = useRef<Mesh>(null);
     const ballPosition = useRef(new Vector3(0, 0, 0));
+    const ballVelocity = useRef(new Vector3(0, 0, 0));
+    const isJumping = useRef(false);
 
     // Tunnel state
     const tunnelRef = useRef<Group>(null);
@@ -33,60 +36,72 @@ export function Game2D() {
     const keys = useRef({
         left: false,
         right: false,
+        jump: false
     });
 
-    // Generate random obstacles
-    const obstacles = useMemo(() => {
-        const result: Obstacle[] = [];
+    // Generate random holes in the floor
+    const holes = useMemo(() => {
+        const result: Hole[] = [];
 
-        for (let i = 0; i < OBSTACLE_COUNT; i++) {
-            // Place obstacles deeper in the tunnel to give player time to start
-            const zPosition = -30 - i * 15;
+        for (let i = 0; i < HOLE_COUNT; i++) {
+            // Place holes deeper in the tunnel to give player time to start
+            const zPosition = -30 - i * 20;
 
-            // Random position within the tunnel
-            const xPosition = Math.random() * (TUNNEL_SIZE - 2) - (TUNNEL_SIZE / 2 - 1);
+            // Random position within the tunnel width (center-aligned)
+            const xPosition = Math.random() * (TUNNEL_SIZE * 0.8) - (TUNNEL_SIZE * 0.4);
 
-            // Random size between 1/5 and 4/5 of tunnel width
-            const minSize = TUNNEL_SIZE / 5; // 1/5 of tunnel width
-            const maxSize = TUNNEL_SIZE * 4 / 5; // 4/5 of tunnel width
+            // Random size between 1/5 and 3/5 of tunnel width
+            const minSize = TUNNEL_SIZE / 5;
+            const maxSize = TUNNEL_SIZE * 3 / 5;
             const width = minSize + Math.random() * (maxSize - minSize);
-            const height = minSize + Math.random() * (maxSize - minSize);
-
-            // Random color
-            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
-            const color = colors[Math.floor(Math.random() * colors.length)];
+            const length = 1 + Math.random() * 2; // Length of hole (in z direction)
 
             result.push({
-                position: [xPosition, -1.5, zPosition],
-                size: [width, height, 0.5],
-                color
+                position: [xPosition, -TUNNEL_SIZE / 2, zPosition],
+                size: [width, length]
             });
         }
 
         return result;
     }, []);
 
-    // Check for collisions with obstacles
+    // Check for collisions with holes
     const checkCollisions = () => {
-        if (!ballRef.current) return;
+        if (!ballRef.current || !tunnelRef.current) return;
 
         const ballPos = ballRef.current.position;
 
-        // Check each obstacle
-        for (const obstacle of obstacles) {
-            const obstaclePos = new Vector3(...obstacle.position);
-            const [width, height, depth] = obstacle.size;
+        // If ball is currently jumping, it can't fall through holes
+        if (isJumping.current && ballVelocity.current.y > 0) return;
 
-            // Simple collision check based on distance
-            const xDist = Math.abs(ballPos.x - obstaclePos.x);
-            const yDist = Math.abs(ballPos.y - obstaclePos.y);
-            const zDist = Math.abs(ballPos.z - (obstaclePos.z + (tunnelRef.current?.position.z || 0)));
+        // Ball's bottom point (considering radius)
+        const ballBottom = ballPos.y - BALL_RADIUS;
 
-            if (xDist < (width / 2 + BALL_RADIUS) &&
-                yDist < (height / 2 + BALL_RADIUS) &&
-                zDist < (depth / 2 + BALL_RADIUS)) {
-                // Collision detected
-                setGameOver(true);
+        // Only check for hole collisions if the ball is near the floor
+        if (Math.abs(ballBottom - (-TUNNEL_SIZE / 2)) > 0.2) return;
+
+        // Check each hole
+        for (const hole of holes) {
+            const holePos = new Vector3(...hole.position);
+            const [width, length] = hole.size;
+
+            // Adjust hole position by tunnel position
+            holePos.z += tunnelRef.current.position.z;
+
+            // Check if ball is above the hole
+            const xDist = Math.abs(ballPos.x - holePos.x);
+            const zDist = Math.abs(ballPos.z - holePos.z);
+
+            if (xDist < width / 2 && zDist < length / 2) {
+                // Ball is over a hole - make it fall
+                ballVelocity.current.y = -GRAVITY;
+                isJumping.current = true;
+
+                // Check if the ball has fallen too far
+                if (ballPos.y < -TUNNEL_SIZE) {
+                    setGameOver(true);
+                }
+
                 return;
             }
         }
@@ -99,18 +114,31 @@ export function Game2D() {
 
             if (e.key === 'ArrowLeft' || e.key === 'a') keys.current.left = true;
             if (e.key === 'ArrowRight' || e.key === 'd') keys.current.right = true;
+
+            // Jump with space (but only if on the ground)
+            if (e.key === ' ' && !isJumping.current) {
+                keys.current.jump = true;
+                isJumping.current = true;
+                ballVelocity.current.y = JUMP_FORCE;
+            }
         };
 
         const handleKeyUp = (e: KeyboardEvent) => {
             if (e.key === 'ArrowLeft' || e.key === 'a') keys.current.left = false;
             if (e.key === 'ArrowRight' || e.key === 'd') keys.current.right = false;
+            if (e.key === ' ') keys.current.jump = false;
 
-            // Restart the game with space bar
-            if (e.key === ' ' && gameOver) {
+            // Restart the game with R key
+            if (e.key === 'r' && gameOver) {
                 setGameOver(false);
                 setScore(0);
+                isJumping.current = false;
+                ballVelocity.current.set(0, 0, 0);
                 if (tunnelRef.current) tunnelRef.current.position.z = 0;
-                if (ballRef.current) ballRef.current.position.x = 0;
+                if (ballRef.current) {
+                    ballRef.current.position.x = 0;
+                    ballRef.current.position.y = -1.5;
+                }
             }
         };
 
@@ -145,7 +173,28 @@ export function Game2D() {
                 ballRef.current.position.x += SIDE_SPEED * delta;
             }
 
-            // Limit ball movement to tunnel boundaries
+            // Handle jumping and gravity
+            ballRef.current.position.y += ballVelocity.current.y * delta;
+
+            // Apply gravity if jumping
+            if (isJumping.current) {
+                ballVelocity.current.y -= GRAVITY * delta;
+            }
+
+            // Check floor collision (except when over holes)
+            const floorY = -TUNNEL_SIZE / 2 + BALL_RADIUS;
+            if (ballRef.current.position.y < floorY && !isOverHole()) {
+                ballRef.current.position.y = floorY;
+                ballVelocity.current.y = 0;
+                isJumping.current = false;
+            }
+
+            // Check if ball fell out of the bottom
+            if (ballRef.current.position.y < -TUNNEL_SIZE) {
+                setGameOver(true);
+            }
+
+            // Limit ball movement to tunnel boundaries on X-axis
             const ballBoundary = TUNNEL_SIZE / 2 - BALL_RADIUS;
             if (ballRef.current.position.x < -ballBoundary) {
                 ballRef.current.position.x = -ballBoundary;
@@ -165,6 +214,31 @@ export function Game2D() {
         camera.position.set(0, 0, 5);
         camera.lookAt(0, 0, 0);
     });
+
+    // Check if the ball is over a hole
+    const isOverHole = (): boolean => {
+        if (!ballRef.current || !tunnelRef.current) return false;
+
+        const ballPos = ballRef.current.position;
+
+        for (const hole of holes) {
+            const holePos = new Vector3(...hole.position);
+            const [width, length] = hole.size;
+
+            // Adjust hole position by tunnel position
+            holePos.z += tunnelRef.current.position.z;
+
+            // Check if ball is above the hole
+            const xDist = Math.abs(ballPos.x - holePos.x);
+            const zDist = Math.abs(ballPos.z - holePos.z);
+
+            if (xDist < width / 2 && zDist < length / 2) {
+                return true;
+            }
+        }
+
+        return false;
+    };
 
     return (
         <>
@@ -198,7 +272,7 @@ export function Game2D() {
                         anchorX="center"
                         anchorY="middle"
                     >
-                        Press SPACE to restart
+                        Press R to restart
                     </Text>
                 </>
             )}
@@ -214,7 +288,7 @@ export function Game2D() {
                 {/* Generate tunnel segments */}
                 {Array.from({ length: 50 }).map((_, i) => (
                     <group key={i} position={[0, 0, -i * 10]}>
-                        {/* Floor */}
+                        {/* Floor - now with continuous segments to handle holes */}
                         <mesh position={[0, -TUNNEL_SIZE / 2, 0]} rotation={[Math.PI / 2, 0, 0]}>
                             <planeGeometry args={[TUNNEL_SIZE, 10]} />
                             <meshStandardMaterial color="#444444" side={2} />
@@ -246,17 +320,17 @@ export function Game2D() {
                     </group>
                 ))}
 
-                {/* Add obstacles */}
-                {obstacles.map((obstacle, index) => (
+                {/* Add holes in the floor */}
+                {holes.map((hole, index) => (
                     <mesh
-                        key={`obstacle-${index}`}
-                        position={obstacle.position}
+                        key={`hole-${index}`}
+                        position={[hole.position[0], hole.position[1] - 1, hole.position[2]]}
                     >
-                        <boxGeometry args={obstacle.size} />
-                        <meshStandardMaterial
-                            color={obstacle.color}
-                            emissive={obstacle.color}
-                            emissiveIntensity={0.3}
+                        <boxGeometry args={[hole.size[0], 2, hole.size[1]]} />
+                        <meshPhongMaterial
+                            color="#000000"
+                            side={2}
+                            opacity={1}
                         />
                     </mesh>
                 ))}
@@ -266,26 +340,35 @@ export function Game2D() {
             {!gameOver && score < 10 && (
                 <group position={[0, 0, -15]}>
                     <mesh position={[0, 0, 0]}>
-                        <planeGeometry args={[10, 3]} />
+                        <planeGeometry args={[10, 4]} />
                         <meshBasicMaterial color="#000000" opacity={0.7} transparent={true} />
                     </mesh>
                     <Text
-                        position={[0, 0.5, 0.1]}
+                        position={[0, 1, 0.1]}
                         color="white"
                         fontSize={0.5}
                         anchorX="center"
                         anchorY="middle"
                     >
-                        Use LEFT / RIGHT arrows
+                        Use LEFT / RIGHT arrows to move
                     </Text>
                     <Text
-                        position={[0, -0.5, 0.1]}
+                        position={[0, 0, 0.1]}
                         color="white"
                         fontSize={0.5}
                         anchorX="center"
                         anchorY="middle"
                     >
-                        to move the ball
+                        Press SPACE to jump
+                    </Text>
+                    <Text
+                        position={[0, -1, 0.1]}
+                        color="#ff8888"
+                        fontSize={0.4}
+                        anchorX="center"
+                        anchorY="middle"
+                    >
+                        Avoid falling through the holes!
                     </Text>
                 </group>
             )}
