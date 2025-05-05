@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Text } from '@react-three/drei';
+import { Text, Stars } from '@react-three/drei';
 import { Vector3, Mesh, Group } from 'three';
 
 // Game configuration
@@ -11,6 +11,12 @@ const GRAVITY = 15;
 const TUNNEL_SIZE = 5;
 const HOLE_COUNT = 20; // Number of holes to generate
 const BALL_RADIUS = TUNNEL_SIZE / 10; // 1/5 of tunnel width
+
+// Tunnel colors
+const FLOOR_COLOR = "#2a4494"; // Deeper blue for floor
+const CEILING_COLOR = "#4371c6"; // Lighter blue for ceiling
+const WALL_COLOR = "#365bb5"; // Medium blue for walls
+const HOLE_COLOR = "#000033"; // Deep blue/black for holes
 
 // Create a type for our holes
 type Hole = {
@@ -242,6 +248,9 @@ export function Game2D() {
 
     return (
         <>
+            {/* Space background with stars */}
+            <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+
             {/* Score display */}
             <Text
                 position={[0, 2, 0]}
@@ -291,31 +300,31 @@ export function Game2D() {
                         {/* Floor - now with continuous segments to handle holes */}
                         <mesh position={[0, -TUNNEL_SIZE / 2, 0]} rotation={[Math.PI / 2, 0, 0]}>
                             <planeGeometry args={[TUNNEL_SIZE, 10]} />
-                            <meshStandardMaterial color="#444444" side={2} />
+                            <meshStandardMaterial color={FLOOR_COLOR} side={2} emissive={FLOOR_COLOR} emissiveIntensity={0.2} />
                         </mesh>
 
                         {/* Ceiling */}
                         <mesh position={[0, TUNNEL_SIZE / 2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
                             <planeGeometry args={[TUNNEL_SIZE, 10]} />
-                            <meshStandardMaterial color="#444444" side={2} />
+                            <meshStandardMaterial color={CEILING_COLOR} side={2} emissive={CEILING_COLOR} emissiveIntensity={0.2} />
                         </mesh>
 
                         {/* Left wall */}
                         <mesh position={[-TUNNEL_SIZE / 2, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
                             <planeGeometry args={[TUNNEL_SIZE, 10]} />
-                            <meshStandardMaterial color="#555555" side={2} />
+                            <meshStandardMaterial color={WALL_COLOR} side={2} emissive={WALL_COLOR} emissiveIntensity={0.2} />
                         </mesh>
 
                         {/* Right wall */}
                         <mesh position={[TUNNEL_SIZE / 2, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
                             <planeGeometry args={[TUNNEL_SIZE, 10]} />
-                            <meshStandardMaterial color="#555555" side={2} />
+                            <meshStandardMaterial color={WALL_COLOR} side={2} emissive={WALL_COLOR} emissiveIntensity={0.2} />
                         </mesh>
 
-                        {/* Add markers every 10 units to show movement */}
+                        {/* Add glowing grid lines on the floor to highlight edges */}
                         <mesh position={[0, -TUNNEL_SIZE / 2 + 0.01, -5]} rotation={[Math.PI / 2, 0, 0]}>
-                            <planeGeometry args={[TUNNEL_SIZE, 0.5]} />
-                            <meshBasicMaterial color="#888888" />
+                            <planeGeometry args={[TUNNEL_SIZE, 0.1]} />
+                            <meshBasicMaterial color="#88ccff" />
                         </mesh>
                     </group>
                 ))}
@@ -328,9 +337,12 @@ export function Game2D() {
                     >
                         <boxGeometry args={[hole.size[0], 2, hole.size[1]]} />
                         <meshPhongMaterial
-                            color="#000000"
+                            color={HOLE_COLOR}
                             side={2}
                             opacity={1}
+                            emissive="#000011"
+                            emissiveIntensity={0.5}
+                            shininess={0}
                         />
                     </mesh>
                 ))}
@@ -341,7 +353,7 @@ export function Game2D() {
                 <group position={[0, 0, -15]}>
                     <mesh position={[0, 0, 0]}>
                         <planeGeometry args={[10, 4]} />
-                        <meshBasicMaterial color="#000000" opacity={0.7} transparent={true} />
+                        <meshBasicMaterial color="#000033" opacity={0.8} transparent={true} />
                     </mesh>
                     <Text
                         position={[0, 1, 0.1]}
@@ -363,7 +375,7 @@ export function Game2D() {
                     </Text>
                     <Text
                         position={[0, -1, 0.1]}
-                        color="#ff8888"
+                        color="#88ccff"
                         fontSize={0.4}
                         anchorX="center"
                         anchorY="middle"
@@ -374,11 +386,13 @@ export function Game2D() {
             )}
 
             {/* Lighting */}
-            <ambientLight intensity={0.7} />
-            <pointLight position={[0, 0, 2]} intensity={1} />
-
-            {/* Add a light that follows the ball to make it more visible */}
+            <ambientLight intensity={0.4} />
+            <pointLight position={[0, 0, 2]} intensity={0.8} color="#ffffff" />
             <pointLight position={[0, -1.5, 0]} intensity={0.8} color="#ff6666" distance={3} />
+
+            {/* Add some colored point lights in the tunnel for atmosphere */}
+            <pointLight position={[2, 0, -10]} intensity={0.5} color="#0066ff" distance={15} />
+            <pointLight position={[-2, 0, -20]} intensity={0.5} color="#6600ff" distance={15} />
         </>
     );
 }
