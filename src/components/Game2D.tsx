@@ -419,8 +419,10 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetX.current = getLanePosition(newLane);
                             isMoving.current = true;
-                            // Ensure proper alignment with surface
-                            snapToSurface();
+                            // Only snap to surface if not jumping
+                            if (!isJumping.current) {
+                                snapToSurface();
+                            }
                         } else {
                             // At leftmost lane, climb the left wall
                             transitionToSurface('leftWall');
@@ -432,8 +434,10 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetX.current = getLanePosition(newLane);
                             isMoving.current = true;
-                            // Ensure proper alignment with surface
-                            snapToSurface();
+                            // Only snap to surface if not jumping
+                            if (!isJumping.current) {
+                                snapToSurface();
+                            }
                         } else {
                             // At rightmost lane, climb the right wall
                             transitionToSurface('rightWall');
@@ -450,8 +454,10 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetY.current = getLanePosition(newLane);
                             isMoving.current = true;
-                            // Ensure proper alignment with surface
-                            snapToSurface();
+                            // Only snap to surface if not jumping
+                            if (!isJumping.current) {
+                                snapToSurface();
+                            }
                         } else {
                             // At topmost lane of left wall, transition to floor
                             transitionToSurface('floor');
@@ -463,8 +469,10 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetY.current = getLanePosition(newLane);
                             isMoving.current = true;
-                            // Ensure proper alignment with surface
-                            snapToSurface();
+                            // Only snap to surface if not jumping
+                            if (!isJumping.current) {
+                                snapToSurface();
+                            }
                         }
                     }
                     break;
@@ -478,8 +486,10 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetY.current = getLanePosition(newLane);
                             isMoving.current = true;
-                            // Ensure proper alignment with surface
-                            snapToSurface();
+                            // Only snap to surface if not jumping
+                            if (!isJumping.current) {
+                                snapToSurface();
+                            }
                         } else {
                             // At bottom-most lane of right wall, transition to floor
                             transitionToSurface('floor');
@@ -491,8 +501,10 @@ export function Game2D() {
                             setCurrentLane(newLane);
                             targetY.current = getLanePosition(newLane);
                             isMoving.current = true;
-                            // Ensure proper alignment with surface
-                            snapToSurface();
+                            // Only snap to surface if not jumping
+                            if (!isJumping.current) {
+                                snapToSurface();
+                            }
                         }
                     }
                     break;
