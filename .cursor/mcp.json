@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "three.js Docs": {
+      "url": "https://gitmcp.io/mrdoob/three.js/"
+    },
+    "cannon-es Docs": {
+      "url": "https://gitmcp.io/pmndrs/cannon-es"
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    }
+  }
+}

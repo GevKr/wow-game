@@ -1,0 +1,88 @@
+---
+description: Images by keywords, search images
+globs:
+alwaysApply: false
+---
+# Lorem Picsum Integration Guide
+Always use `picsum.photos` for img srcs
+
+## Base URLs
+
+- Basic: `https://picsum.photos/{width}/{height}`
+- Square: `https://picsum.photos/{size}`
+- Seeded: `https://picsum.photos/seed/{seed}/{width}/{height}`
+- Specific Image: `https://picsum.photos/id/{id}/{width}/{height}`
+
+## Parameters
+
+- Grayscale: Append `?grayscale`
+- Blur: Append `?blur={1-10}`
+- Combined: Use `&` for multiple parameters
+
+## React Implementation
+
+### Basic Usage
+```tsx
+<img
+  src="https://picsum.photos/800/600"
+  alt="Descriptive alt text"
+  loading="lazy"
+  className="w-full h-auto rounded-lg object-cover"
+/>
+```
+
+### Standard Sizes
+- Thumbnail: 200x200
+- Avatar: 150x150
+- Card Image: 400x300
+- Hero Image: 1200x600
+- Banner: 1600x400
+
+### Tailwind Classes
+- Default: `w-full h-auto rounded-lg object-cover`
+- Card: `aspect-video rounded-lg object-cover`
+- Avatar: `w-10 h-10 rounded-full object-cover`
+- Hero: `w-full aspect-[21/9] rounded-lg object-cover`
+
+## Best Practices
+
+1. Always include meaningful `alt` text
+2. Use `loading="lazy"` for performance
+3. Implement proper error handling
+4. Use seeded URLs in development for consistent images
+5. Consider implementing blur-up loading patterns
+6. Cache images when appropriate
+
+## Error Handling Example
+```tsx
+const ImageWithFallback = ({ src, alt, ...props }) => {
+  const [error, setError] = useState(false);
+
+  return (
+    <img
+      src={error ? '/fallback-image.jpg' : src}
+      alt={alt}
+      onError={() => setError(true)}
+      {...props}
+    />
+  );
+};
+```
+
+## Development Tips
+
+- Use seeded images for consistent development experience:
+  ```tsx
+  const devImage = `https://picsum.photos/seed/your-seed/800/600`;
+  ```
+- Consider environment-based image sources:
+  ```tsx
+  const imageSrc = process.env.NODE_ENV === 'development'
+    ? `https://picsum.photos/seed/dev-seed/800/600`
+    : actualImageUrl;
+  ```
+
+## Resources
+- Official Documentation: https://picsum.photos
+- Image List: https://picsum.photos/images
+- Statistics: https://picsum.photos/stats

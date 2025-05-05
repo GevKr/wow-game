@@ -1,0 +1,41 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# 🗂 Project Structure (React + Three.js + Vite + shadcn/ui)
+
+All folders are under `src/`:
+
+- **`components/`** – 3D scene components
+  _e.g. `<SceneCanvas />`, `<Player />`, `<Environment />`_
+
+- **`components/ui/`** – UI primitives from `shadcn/ui`
+  _e.g. `button.tsx`, `dialog.tsx`, `tooltip.tsx`_
+  These are generated via `npx shadcn-ui@latest add <component>` and should follow the library’s structure.
+
+- **`hooks/`** – Custom logic hooks
+  _e.g. `useControls.ts`, `useFollowCamera.ts`_
+
+- **`systems/`** – Global loop logic (physics, animation, AI)
+  _e.g. `physics.ts`, `tick.ts`_
+
+- **`stores/`** – Global state (Zustand/Jotai)
+  _e.g. `gameState.ts`, `settingsStore.ts`_
+
+- **`loaders/`** – Asset loading logic
+  _e.g. `loadGLTF.ts`, `loadTexture.ts`_
+
+- **`utils/`** – Helpers and math utilities
+  _e.g. `lerp.ts`, `randomInRange.ts`_
+
+- **`ui/`** – High-level UI components (menus, HUD, overlays)
+  _e.g. `MainMenu.tsx`, `HUD.tsx`_
+  Composed using `components/ui/` primitives.
+
+- **`shaders/`** – Custom GLSL shaders
+  _e.g. `portalShader.ts`_
+
+- **`App.tsx`** – Main app layout, mounts `<Canvas />` and `<UI />`
+
+- **`main.tsx`** – Vite entry point
