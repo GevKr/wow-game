@@ -260,9 +260,6 @@ export function Game2D() {
     const transitionToSurface = (newSurface: Surface) => {
         if (newSurface === currentSurface || !playerRef.current) return;
 
-        // Keep track of the current lane position between surfaces
-        // We maintain the same lane number across all surfaces
-
         // Set camera rotation based on surface
         const euler = new Euler();
 
@@ -334,6 +331,9 @@ export function Game2D() {
         // Reset player velocity to prevent residual momentum
         playerVelocity.current.set(0, 0, 0);
         isJumping.current = false;
+
+        // Allow lane movement during transition
+        isMoving.current = false;
     };
 
     // Check if player is on a valid tile of current surface
@@ -397,8 +397,16 @@ export function Game2D() {
 
             if (gameState !== 'playing') return;
 
-            // Don't handle movement when already moving or during rotation
-            if (isMoving.current || rotationProgress.current > 0) return;
+            // Only prevent lane changes if we're already in the process of moving between lanes
+            // But allow transitions between surfaces even during lane movement
+            const isWallTransition =
+                (e.key === 'ArrowLeft' || e.key === 'a') && currentLane === 0 && currentSurface === 'floor' ||
+                (e.key === 'ArrowRight' || e.key === 'd') && currentLane === LANE_COUNT - 1 && currentSurface === 'floor' ||
+                (e.key === 'ArrowLeft' || e.key === 'a') && currentLane === LANE_COUNT - 1 && currentSurface === 'leftWall' ||
+                (e.key === 'ArrowRight' || e.key === 'd') && currentLane === 0 && currentSurface === 'rightWall';
+
+            // Allow wall transitions even during movement, but prevent lane changes if already moving
+            if (isMoving.current && !isWallTransition) return;
 
             // Handle movement based on current surface
             switch (currentSurface) {
@@ -536,7 +544,13 @@ export function Game2D() {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [currentLane, currentSurface, gameState, rotationProgress.current]);
+    }, [gameState, currentLane, currentSurface]);
+
+    // Reset isMoving flag when a transition completes
+    useEffect(() => {
+        // No need for interval-based reset, we'll handle this directly in the useFrame
+        return () => { };
+    }, []);
 
     // Main game loop
     useFrame((state, delta) => {
@@ -577,8 +591,10 @@ export function Game2D() {
                 const rotMatrix = new Matrix4().makeRotationFromEuler(cameraRotation.current);
                 camera.up.set(0, 1, 0).applyMatrix4(rotMatrix);
 
-                // Only skip physics calculations during rotation
-                if (rotationProgress.current > 0.2) return;
+                // If rotation completes this frame, reset isMoving to allow lane changes
+                if (rotationProgress.current <= 0) {
+                    isMoving.current = false;
+                }
             }
 
             // Handle side movement (X axis for floor, Y axis for walls)
