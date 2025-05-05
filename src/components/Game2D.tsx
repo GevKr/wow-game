@@ -377,16 +377,22 @@ export function Game2D() {
 
                         {/* Lane dividers on the floor */}
                         {laneDividers.map((xPos, index) => (
-                            <mesh
-                                key={`divider-${index}-${i}`}
-                                position={[xPos, -TUNNEL_SIZE / 2 + 0.05, 0]}
-                                rotation={[0, 0, 0]}
-                            >
-                                <boxGeometry args={[0.08, 0.1, 10]} />
-                                <meshBasicMaterial
-                                    color={LANE_DIVIDER_COLOR}
-                                />
-                            </mesh>
+                            Array.from({ length: 10 }).map((_, dashIndex) => (
+                                <mesh
+                                    key={`divider-${index}-${i}-${dashIndex}`}
+                                    position={[
+                                        xPos,
+                                        -TUNNEL_SIZE / 2 + 0.03,
+                                        -dashIndex - (dashIndex * 0.5) // Space them out along the Z axis
+                                    ]}
+                                    rotation={[0, 0, 0]}
+                                >
+                                    <boxGeometry args={[0.03, 0.06, 0.3]} />
+                                    <meshBasicMaterial
+                                        color={LANE_DIVIDER_COLOR}
+                                    />
+                                </mesh>
+                            ))
                         ))}
 
                         {/* Add glowing grid lines on the floor to highlight edges */}
