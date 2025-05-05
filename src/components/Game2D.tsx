@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Text, Stars } from '@react-three/drei';
-import { Vector3, Mesh, Group, DoubleSide } from 'three';
+import { Vector3, Mesh, Group, DoubleSide, Euler, Matrix4 } from 'three';
 
 // Game configuration
 const MOVE_SPEED = 6; // Speed the character runs forward
@@ -15,9 +15,13 @@ const BALL_RADIUS = 0.25; // Character size
 const FLOOR_COLORS = ["#ff91c6", "#ff7fb8", "#ff69a9", "#ff7fb8", "#ff91c6"]; // Pink floor colors
 const CEILING_COLOR = "#ff4d94"; // Darker pink for ceiling
 const WALL_COLOR = "#ff8c42"; // Orange for walls
+const LANE_COUNT = 5; // Number of lanes
+
+// Surface types the player can run on
+type Surface = 'floor' | 'ceiling' | 'leftWall' | 'rightWall';
 
 // Lane positions
-const getLanePosition = (lane: number, totalLanes: number = 5) => {
+const getLanePosition = (lane: number, totalLanes: number = LANE_COUNT) => {
     const laneWidth = TUNNEL_SIZE / totalLanes;
     return -TUNNEL_SIZE / 2 + laneWidth / 2 + lane * laneWidth;
 };
@@ -26,7 +30,7 @@ const getLanePosition = (lane: number, totalLanes: number = 5) => {
 type Tile = {
     position: [number, number, number]; // x, y, z
     size: [number, number]; // width, length
-    type: 'floor' | 'ceiling' | 'leftWall' | 'rightWall';
+    type: Surface; // Type of surface
     color: string;
     exists: boolean; // Whether this tile exists or is a gap
 };
@@ -39,6 +43,8 @@ export function Game2D() {
     const [score, setScore] = useState(0);
     const [gameState, setGameState] = useState<GameState>('start');
     const [currentLane, setCurrentLane] = useState(2); // Start in middle lane (0-4)
+    const [currentSurface, setCurrentSurface] = useState<Surface>('floor');
+    const [isFallingThroughGap, setIsFallingThroughGap] = useState(false);
 
     // Player state
     const playerRef = useRef<Mesh>(null);
@@ -46,6 +52,12 @@ export function Game2D() {
     const isJumping = useRef(false);
     const isMoving = useRef(false);
     const targetX = useRef(getLanePosition(2));
+    const targetY = useRef(0); // Added for wall movement
+
+    // Camera state
+    const cameraRotation = useRef(new Euler(0, 0, 0));
+    const targetCameraRotation = useRef(new Euler(0, 0, 0));
+    const rotationProgress = useRef(0);
 
     // World state
     const tunnelRef = useRef<Group>(null);
@@ -202,28 +214,151 @@ export function Game2D() {
         return generateTunnel();
     }, []);
 
-    // Check if player is on a tile
+    // Get gravity direction based on current surface
+    const getGravityDirection = () => {
+        switch (currentSurface) {
+            case 'floor':
+                return new Vector3(0, -1, 0); // Down is -Y
+            case 'ceiling':
+                return new Vector3(0, 1, 0);  // Down is +Y
+            case 'leftWall':
+                return new Vector3(-1, 0, 0); // Down is -X
+            case 'rightWall':
+                return new Vector3(1, 0, 0);  // Down is +X
+            default:
+                return new Vector3(0, -1, 0);
+        }
+    };
+
+    // Handle transition to a different surface
+    const transitionToSurface = (newSurface: Surface) => {
+        if (newSurface === currentSurface || !playerRef.current) return;
+
+        // Keep track of the current lane position between surfaces
+        // We maintain the same lane number across all surfaces
+
+        // Set camera rotation based on surface
+        const euler = new Euler();
+
+        switch (newSurface) {
+            case 'floor':
+                euler.set(0, 0, 0);
+                // Always position at the current lane when transitioning to floor
+                playerRef.current.position.set(
+                    getLanePosition(currentLane),
+                    -TUNNEL_SIZE / 2 + BALL_RADIUS,
+                    playerRef.current.position.z
+                );
+                break;
+
+            case 'ceiling':
+                euler.set(0, 0, Math.PI);
+                // Always position at the current lane when transitioning to ceiling
+                playerRef.current.position.set(
+                    getLanePosition(currentLane),
+                    TUNNEL_SIZE / 2 - BALL_RADIUS,
+                    playerRef.current.position.z
+                );
+                break;
+
+            case 'leftWall':
+                euler.set(0, 0, -Math.PI / 2);
+                // Always position at the current lane when transitioning to left wall
+                playerRef.current.position.set(
+                    -TUNNEL_SIZE / 2 + BALL_RADIUS,
+                    getLanePosition(currentLane),
+                    playerRef.current.position.z
+                );
+                break;
+
+            case 'rightWall':
+                euler.set(0, 0, Math.PI / 2);
+                // When climbing onto right wall, reset to leftmost lane (0)
+                if (currentSurface === 'floor') {
+                    // Reset to leftmost lane
+                    setCurrentLane(0);
+                    playerRef.current.position.set(
+                        TUNNEL_SIZE / 2 - BALL_RADIUS,
+                        getLanePosition(0), // Position at leftmost lane
+                        playerRef.current.position.z
+                    );
+                    targetY.current = getLanePosition(0); // Set target Y to leftmost lane
+                } else {
+                    // Normal transition from other surfaces
+                    playerRef.current.position.set(
+                        TUNNEL_SIZE / 2 - BALL_RADIUS,
+                        getLanePosition(currentLane),
+                        playerRef.current.position.z
+                    );
+                }
+                break;
+        }
+
+        // Update surface after positioning the player
+        setCurrentSurface(newSurface);
+        targetCameraRotation.current = euler;
+        rotationProgress.current = 1.0; // 1 second duration for animation
+
+        // Set the appropriate target position based on current lane
+        targetX.current = getLanePosition(currentLane);
+        if (newSurface !== 'rightWall' || currentSurface !== 'floor') {
+            targetY.current = getLanePosition(currentLane);
+        }
+
+        // Reset player velocity
+        playerVelocity.current.set(0, 0, 0);
+        isJumping.current = false;
+    };
+
+    // Check if player is on a valid tile of current surface
     const isPlayerOnTile = () => {
         if (!playerRef.current) return false;
 
+        // If falling through a gap, keep falling
+        if (isFallingThroughGap) return false;
+
         const playerPos = playerRef.current.position;
+        const posZ = tunnelPosition.current;
 
-        // Check if player is at floor level or above
-        const floorY = -TUNNEL_SIZE / 2 + BALL_RADIUS;
-        const isAtFloorLevel = playerPos.y >= floorY - 0.1;
+        // Find appropriate tile based on current surface
+        let tile;
 
-        // If already falling below the floor level, don't check for floor tiles
-        if (!isAtFloorLevel) return false;
+        switch (currentSurface) {
+            case 'floor':
+                tile = tunnelTiles.find(t =>
+                    t.type === 'floor' &&
+                    Math.abs(t.position[0] - playerPos.x) < TILE_SIZE / 2 &&
+                    Math.abs(t.position[2] + posZ - playerPos.z) < TILE_SIZE / 2
+                );
+                break;
 
-        // Check tiles under player
-        const floorTile = tunnelTiles.find(tile =>
-            tile.type === 'floor' &&
-            Math.abs(tile.position[0] - playerPos.x) < TILE_SIZE / 2 &&
-            Math.abs(tile.position[2] + tunnelPosition.current - playerPos.z) < TILE_SIZE / 2
-        );
+            case 'ceiling':
+                tile = tunnelTiles.find(t =>
+                    t.type === 'ceiling' &&
+                    Math.abs(t.position[0] - playerPos.x) < TILE_SIZE / 2 &&
+                    Math.abs(t.position[2] + posZ - playerPos.z) < TILE_SIZE / 2
+                );
+                break;
+
+            case 'leftWall':
+                tile = tunnelTiles.find(t =>
+                    t.type === 'leftWall' &&
+                    Math.abs(t.position[1] - playerPos.y) < TILE_SIZE / 2 &&
+                    Math.abs(t.position[2] + posZ - playerPos.z) < TILE_SIZE / 2
+                );
+                break;
+
+            case 'rightWall':
+                tile = tunnelTiles.find(t =>
+                    t.type === 'rightWall' &&
+                    Math.abs(t.position[1] - playerPos.y) < TILE_SIZE / 2 &&
+                    Math.abs(t.position[2] + posZ - playerPos.z) < TILE_SIZE / 2
+                );
+                break;
+        }
 
         // Return true if there's a tile and it exists (not a gap)
-        return floorTile !== undefined && floorTile.exists;
+        return tile !== undefined && tile.exists;
     };
 
     // Set up controls
@@ -236,30 +371,94 @@ export function Game2D() {
 
             if (gameState !== 'playing') return;
 
-            // Don't handle left/right when already moving
-            if (isMoving.current && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
-                e.key === 'a' || e.key === 'd')) return;
+            // Don't handle movement when already moving or during rotation
+            if (isMoving.current || rotationProgress.current > 0) return;
 
-            // Move left
-            if ((e.key === 'ArrowLeft' || e.key === 'a') && currentLane > 0) {
-                const newLane = currentLane - 1;
-                setCurrentLane(newLane);
-                targetX.current = getLanePosition(newLane);
-                isMoving.current = true;
+            // Handle movement based on current surface
+            switch (currentSurface) {
+                case 'floor':
+                    // On floor, left/right to move and at edges to climb walls
+                    if ((e.key === 'ArrowLeft' || e.key === 'a')) {
+                        if (currentLane > 0) {
+                            // Normal movement
+                            const newLane = currentLane - 1;
+                            setCurrentLane(newLane);
+                            targetX.current = getLanePosition(newLane);
+                            isMoving.current = true;
+                        } else {
+                            // At leftmost lane, climb the left wall
+                            transitionToSurface('leftWall');
+                        }
+                    } else if ((e.key === 'ArrowRight' || e.key === 'd')) {
+                        if (currentLane < LANE_COUNT - 1) {
+                            // Normal movement
+                            const newLane = currentLane + 1;
+                            setCurrentLane(newLane);
+                            targetX.current = getLanePosition(newLane);
+                            isMoving.current = true;
+                        } else {
+                            // At rightmost lane, climb the right wall
+                            transitionToSurface('rightWall');
+                        }
+                    }
+                    break;
+
+                case 'leftWall':
+                    // When on left wall, keep control scheme consistent with floor
+                    if ((e.key === 'ArrowLeft' || e.key === 'a')) {
+                        // Left on keyboard = lower Y position (down)
+                        if (currentLane < LANE_COUNT - 1) {
+                            const newLane = currentLane + 1;
+                            setCurrentLane(newLane);
+                            targetY.current = getLanePosition(newLane);
+                            isMoving.current = true;
+                        } else {
+                            // At topmost lane of left wall, transition to floor
+                            transitionToSurface('floor');
+                        }
+                    } else if ((e.key === 'ArrowRight' || e.key === 'd')) {
+                        // Right on keyboard = higher Y position (up)
+                        if (currentLane > 0) {
+                            const newLane = currentLane - 1;
+                            setCurrentLane(newLane);
+                            targetY.current = getLanePosition(newLane);
+                            isMoving.current = true;
+                        }
+                    }
+                    break;
+
+                case 'rightWall':
+                    // When on right wall, controls should be mirrored from left wall
+                    if ((e.key === 'ArrowRight' || e.key === 'd')) {
+                        // Right on keyboard = lower Y position (down)
+                        if (currentLane < LANE_COUNT - 1) {
+                            const newLane = currentLane + 1;
+                            setCurrentLane(newLane);
+                            targetY.current = getLanePosition(newLane);
+                            isMoving.current = true;
+                        } else {
+                            // At bottom-most lane of right wall, transition to floor
+                            transitionToSurface('floor');
+                        }
+                    } else if ((e.key === 'ArrowLeft' || e.key === 'a')) {
+                        // Left on keyboard = higher Y position (up)
+                        if (currentLane > 0) {
+                            const newLane = currentLane - 1;
+                            setCurrentLane(newLane);
+                            targetY.current = getLanePosition(newLane);
+                            isMoving.current = true;
+                        }
+                    }
+                    break;
             }
 
-            // Move right
-            if ((e.key === 'ArrowRight' || e.key === 'd') && currentLane < 4) {
-                const newLane = currentLane + 1;
-                setCurrentLane(newLane);
-                targetX.current = getLanePosition(newLane);
-                isMoving.current = true;
-            }
-
-            // Jump
+            // Jump with space
             if (e.key === ' ' && !isJumping.current) {
                 isJumping.current = true;
-                playerVelocity.current.y = JUMP_FORCE;
+                // Apply jump force in direction opposite to gravity
+                const gravityDir = getGravityDirection();
+                playerVelocity.current.x = -gravityDir.x * JUMP_FORCE;
+                playerVelocity.current.y = -gravityDir.y * JUMP_FORCE;
             }
         };
 
@@ -270,8 +469,17 @@ export function Game2D() {
                 setGameState('playing');
                 setScore(0);
                 setCurrentLane(2);
+                setCurrentSurface('floor');
                 targetX.current = getLanePosition(2);
                 tunnelPosition.current = 0;
+
+                // Reset camera rotation
+                cameraRotation.current = new Euler(0, 0, 0);
+                targetCameraRotation.current = new Euler(0, 0, 0);
+                rotationProgress.current = 0;
+
+                // Reset falling state
+                setIsFallingThroughGap(false);
 
                 // Reset player
                 if (playerRef.current) {
@@ -290,7 +498,7 @@ export function Game2D() {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
         };
-    }, [currentLane, gameState]);
+    }, [currentLane, currentSurface, gameState, rotationProgress.current]);
 
     // Main game loop
     useFrame((state, delta) => {
@@ -298,6 +506,27 @@ export function Game2D() {
 
         if (gameState === 'playing' && playerRef.current) {
             const playerPos = playerRef.current.position;
+            const gravityDir = getGravityDirection();
+
+            // Handle camera rotation animation
+            if (rotationProgress.current > 0) {
+                // Smooth rotation transition
+                const step = Math.min(delta * 2, rotationProgress.current); // Slower animation (2 instead of 3)
+                rotationProgress.current -= step;
+
+                // Interpolate rotation with easing (smoother transition)
+                const t = Math.sin((1 - rotationProgress.current) * Math.PI / 2); // Easing function
+                cameraRotation.current.x = (1 - t) * cameraRotation.current.x + t * targetCameraRotation.current.x;
+                cameraRotation.current.y = (1 - t) * cameraRotation.current.y + t * targetCameraRotation.current.y;
+                cameraRotation.current.z = (1 - t) * cameraRotation.current.z + t * targetCameraRotation.current.z;
+
+                // Apply rotation to camera view
+                camera.rotation.copy(cameraRotation.current);
+
+                // Also adjust up vector for proper orientation
+                const rotMatrix = new Matrix4().makeRotationFromEuler(cameraRotation.current);
+                camera.up.set(0, 1, 0).applyMatrix4(rotMatrix);
+            }
 
             // Auto-move forward
             tunnelPosition.current += MOVE_SPEED * delta;
@@ -305,46 +534,116 @@ export function Game2D() {
             // Update score
             setScore(Math.floor(tunnelPosition.current));
 
-            // Handle side movement
+            // Handle side movement (X axis for floor, Y axis for walls)
             if (isMoving.current) {
-                const step = SIDE_SPEED * delta;
-                const diff = targetX.current - playerPos.x;
+                if (currentSurface === 'floor' || currentSurface === 'ceiling') {
+                    // X-axis movement for floor and ceiling
+                    const step = SIDE_SPEED * delta;
+                    const diff = targetX.current - playerPos.x;
 
-                if (Math.abs(diff) <= step) {
-                    // Reached target
-                    playerPos.x = targetX.current;
-                    isMoving.current = false;
-                } else {
-                    // Move toward target
-                    playerPos.x += Math.sign(diff) * step;
+                    if (Math.abs(diff) <= step) {
+                        // Reached target
+                        playerPos.x = targetX.current;
+                        isMoving.current = false;
+                    } else {
+                        // Move toward target
+                        playerPos.x += Math.sign(diff) * step;
+                    }
+                } else if (currentSurface === 'leftWall' || currentSurface === 'rightWall') {
+                    // Y-axis movement for walls
+                    const step = SIDE_SPEED * delta;
+                    const diff = targetY.current - playerPos.y;
+
+                    if (Math.abs(diff) <= step) {
+                        // Reached target
+                        playerPos.y = targetY.current;
+                        isMoving.current = false;
+                    } else {
+                        // Move toward target
+                        playerPos.y += Math.sign(diff) * step;
+                    }
                 }
             }
 
-            // Apply gravity
-            playerVelocity.current.y -= GRAVITY * delta;
+            // Apply gravity in the appropriate direction
+            playerVelocity.current.x += gravityDir.x * GRAVITY * delta;
+            playerVelocity.current.y += gravityDir.y * GRAVITY * delta;
 
-            // Update vertical position
+            // Update position with velocity
+            playerPos.x += playerVelocity.current.x * delta;
             playerPos.y += playerVelocity.current.y * delta;
 
-            // Get the floor level for collision
-            const floorY = -TUNNEL_SIZE / 2 + BALL_RADIUS;
+            // Check for collision with the current surface
+            let surfaceLevel = 0;
+            let collisionAxis = '';
 
-            // Check if player is over a tile and at or above floor level
-            const isFalling = playerPos.y < floorY - 0.1;
-            const onTile = isPlayerOnTile();
-
-            // If on a solid tile and not already falling through a gap
-            if (playerPos.y <= floorY && onTile && !isFalling) {
-                // Standing on a solid tile - stop falling
-                playerPos.y = floorY;
-                playerVelocity.current.y = 0;
-                isJumping.current = false;
+            switch (currentSurface) {
+                case 'floor':
+                    surfaceLevel = -TUNNEL_SIZE / 2 + BALL_RADIUS;
+                    collisionAxis = 'y';
+                    break;
+                case 'ceiling':
+                    surfaceLevel = TUNNEL_SIZE / 2 - BALL_RADIUS;
+                    collisionAxis = 'y';
+                    break;
+                case 'leftWall':
+                    surfaceLevel = -TUNNEL_SIZE / 2 + BALL_RADIUS;
+                    collisionAxis = 'x';
+                    break;
+                case 'rightWall':
+                    surfaceLevel = TUNNEL_SIZE / 2 - BALL_RADIUS;
+                    collisionAxis = 'x';
+                    break;
             }
-            // If not on a tile or already falling, keep falling
 
-            // Check if player fell too far
-            if (playerPos.y < -TUNNEL_SIZE * 2) {
+            // Check for gap detection
+            const onSurface = isPlayerOnTile();
+
+            // If we're near the surface but over a gap, mark as falling through
+            const nearSurface = (
+                (collisionAxis === 'y' && Math.abs(playerPos.y - surfaceLevel) < 0.2) ||
+                (collisionAxis === 'x' && Math.abs(playerPos.x - surfaceLevel) < 0.2)
+            );
+
+            if (!onSurface && nearSurface && !isFallingThroughGap) {
+                setIsFallingThroughGap(true);
+            }
+
+            // Handle collision with surface - only if not falling through a gap
+            if (onSurface && !isFallingThroughGap) {
+                if (collisionAxis === 'y') {
+                    // Floor/ceiling collision
+                    const isBelow = (currentSurface === 'floor' && playerPos.y < surfaceLevel) ||
+                        (currentSurface === 'ceiling' && playerPos.y > surfaceLevel);
+
+                    if (isBelow) {
+                        playerPos.y = surfaceLevel;
+                        playerVelocity.current.y = 0;
+                        isJumping.current = false;
+                    }
+                } else {
+                    // Wall collision
+                    const isInside = (currentSurface === 'leftWall' && playerPos.x < surfaceLevel) ||
+                        (currentSurface === 'rightWall' && playerPos.x > surfaceLevel);
+
+                    if (isInside) {
+                        playerPos.x = surfaceLevel;
+                        playerVelocity.current.x = 0;
+                        isJumping.current = false;
+                    }
+                }
+            }
+
+            // Check if player fell too far (in any direction)
+            const outOfBounds =
+                playerPos.y < -TUNNEL_SIZE * 2 ||
+                playerPos.y > TUNNEL_SIZE * 2 ||
+                playerPos.x < -TUNNEL_SIZE * 2 ||
+                playerPos.x > TUNNEL_SIZE * 2;
+
+            if (outOfBounds) {
                 setGameState('gameOver');
+                setIsFallingThroughGap(false);
             }
 
             // Move player through tunnel
@@ -353,7 +652,7 @@ export function Game2D() {
             }
         }
 
-        // Keep camera fixed
+        // Keep camera position fixed (but rotation changes)
         camera.position.set(0, 0, 5);
         camera.lookAt(0, 0, 0);
     });
@@ -486,32 +785,50 @@ export function Game2D() {
             </group>
 
             {/* Instructions */}
-            {gameState === 'playing' && score < 10 && (
+            {gameState === 'playing' && score < 15 && (
                 <group position={[0, 0, -15]}>
                     <mesh position={[0, 0, 0]}>
-                        <planeGeometry args={[10, 5]} />
+                        <planeGeometry args={[12, 7]} />
                         <meshBasicMaterial color="#000033" opacity={0.8} transparent={true} />
                     </mesh>
                     <Text
-                        position={[0, 1, 0.1]}
+                        position={[0, 2, 0.1]}
                         color="white"
-                        fontSize={0.5}
+                        fontSize={0.4}
                         anchorX="center"
                         anchorY="middle"
                     >
-                        Use LEFT / RIGHT arrows to switch lanes
+                        LEFT/RIGHT - move between lanes
+                    </Text>
+                    <Text
+                        position={[0, 1, 0.1]}
+                        color="#88ccff"
+                        fontSize={0.4}
+                        anchorX="center"
+                        anchorY="middle"
+                    >
+                        Run off edge of floor to transfer to a wall
                     </Text>
                     <Text
                         position={[0, 0, 0.1]}
                         color="white"
-                        fontSize={0.5}
+                        fontSize={0.4}
                         anchorX="center"
                         anchorY="middle"
                     >
-                        Press SPACE to jump
+                        On walls, LEFT/RIGHT still moves between lanes!
                     </Text>
                     <Text
                         position={[0, -1, 0.1]}
+                        color="white"
+                        fontSize={0.4}
+                        anchorX="center"
+                        anchorY="middle"
+                    >
+                        SPACE - jump (away from surface)
+                    </Text>
+                    <Text
+                        position={[0, -2, 0.1]}
                         color="#ff8888"
                         fontSize={0.4}
                         anchorX="center"
