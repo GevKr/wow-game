@@ -137,6 +137,32 @@ export function Game2D() {
     const [isInvincible, setIsInvincible] = useState(false);
     const [collectionEffect, setCollectionEffect] = useState<{ position: [number, number, number], time: number } | null>(null);
     const invincibilityTimer = useRef<NodeJS.Timeout | null>(null);
+    const invincibilityEffectsRef = useRef<Group>(null);
+    const colorTransitionStart = useRef<number | null>(null);
+    const COLOR_TRANSITION_DURATION = 1000; // 1 second transition
+
+    // Helper function to lerp colors
+    const lerpColor = (start: string, end: string, t: number) => {
+        // Convert hex to rgb
+        const startRGB = {
+            r: parseInt(start.slice(1, 3), 16),
+            g: parseInt(start.slice(3, 5), 16),
+            b: parseInt(start.slice(5, 7), 16)
+        };
+        const endRGB = {
+            r: parseInt(end.slice(1, 3), 16),
+            g: parseInt(end.slice(3, 5), 16),
+            b: parseInt(end.slice(5, 7), 16)
+        };
+
+        // Lerp each component
+        const r = Math.round(startRGB.r + (endRGB.r - startRGB.r) * t);
+        const g = Math.round(startRGB.g + (endRGB.g - startRGB.g) * t);
+        const b = Math.round(startRGB.b + (endRGB.b - startRGB.b) * t);
+
+        // Convert back to hex
+        return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    };
 
     // Update blur effect when boost state changes
     useEffect(() => {
@@ -608,6 +634,50 @@ export function Game2D() {
             const playerPos = playerRef.current.position;
             const gravityDir = getGravityDirection();
 
+            // Handle color transition
+            let currentColor = "#ff3030";
+            let currentEmissive = "#ff0000";
+            let currentEmissiveIntensity = 0.3;
+            let currentMetalness = 0.5;
+            let currentRoughness = 0.5;
+
+            if (isInvincible) {
+                currentColor = "#ffffff";
+                currentEmissive = "#ffffff";
+                currentEmissiveIntensity = 2;
+                currentMetalness = 0.9;
+                currentRoughness = 0.1;
+                colorTransitionStart.current = null;
+            } else if (colorTransitionStart.current !== null) {
+                const elapsed = performance.now() - colorTransitionStart.current;
+                const t = Math.min(elapsed / COLOR_TRANSITION_DURATION, 1);
+
+                if (t < 1) {
+                    currentColor = lerpColor("#ffffff", "#ff3030", t);
+                    currentEmissive = lerpColor("#ffffff", "#ff0000", t);
+                    currentEmissiveIntensity = 2 - (1.7 * t);
+                    currentMetalness = 0.9 - (0.4 * t);
+                    currentRoughness = 0.1 + (0.4 * t);
+                } else {
+                    colorTransitionStart.current = null;
+                }
+            }
+
+            // Update player material
+            const playerMaterial = playerRef.current.material as THREE.MeshStandardMaterial;
+            if (playerMaterial) {
+                playerMaterial.color.set(currentColor);
+                playerMaterial.emissive.set(currentEmissive);
+                playerMaterial.emissiveIntensity = currentEmissiveIntensity;
+                playerMaterial.metalness = currentMetalness;
+                playerMaterial.roughness = currentRoughness;
+            }
+
+            // Update invincibility effects position
+            if (invincibilityEffectsRef.current && isInvincible) {
+                invincibilityEffectsRef.current.position.copy(playerPos);
+            }
+
             // Check for key note collection
             setKeyNotes(prev => {
                 let collected = false;
@@ -650,11 +720,13 @@ export function Game2D() {
 
                     // Activate invincibility
                     setIsInvincible(true);
+                    colorTransitionStart.current = null;
                     console.log("Invincibility activated!");
 
                     // Set timer to disable invincibility
                     invincibilityTimer.current = setTimeout(() => {
                         setIsInvincible(false);
+                        colorTransitionStart.current = performance.now();
                         invincibilityTimer.current = null;
                         console.log("Invincibility deactivated!");
                     }, INVINCIBILITY_DURATION);
@@ -869,6 +941,7 @@ export function Game2D() {
             currentSpeed.current = INITIAL_MOVE_SPEED;
             lastColorIndex.current = 0;
             setIsInvincible(false);
+            colorTransitionStart.current = null;
             if (invincibilityTimer.current) {
                 clearTimeout(invincibilityTimer.current);
                 invincibilityTimer.current = null;
@@ -881,6 +954,7 @@ export function Game2D() {
                 clearTimeout(invincibilityTimer.current);
                 invincibilityTimer.current = null;
             }
+            colorTransitionStart.current = null;
         };
     }, [gameState]);
 
@@ -910,28 +984,6 @@ export function Game2D() {
             >
                 {`Score: ${score}`}
             </Text>
-
-            {/* Invincibility indicator */}
-            {isInvincible && (
-                <group>
-                    <mesh position={[0, 0, 0]}>
-                        <sphereGeometry args={[BALL_RADIUS * 1.5, 32, 32]} />
-                        <meshStandardMaterial
-                            color="#ffffff"
-                            transparent={true}
-                            opacity={0.3}
-                            emissive="#ffffff"
-                            emissiveIntensity={0.5}
-                        />
-                    </mesh>
-                    <pointLight
-                        position={[0, 0, 0]}
-                        intensity={1}
-                        color="#ffffff"
-                        distance={3}
-                    />
-                </group>
-            )}
 
             {/* Tunnel */}
             <group ref={tunnelRef}>
@@ -1175,8 +1227,65 @@ export function Game2D() {
                 position={[getLanePosition(2), -TUNNEL_SIZE / 2 + BALL_RADIUS, 0]}
             >
                 <sphereGeometry args={[BALL_RADIUS, 32, 32]} />
-                <meshStandardMaterial color="#ff3030" emissive="#ff0000" emissiveIntensity={0.3} />
+                <meshStandardMaterial
+                    color={isInvincible ? "#ffffff" : "#ff3030"}
+                    emissive={isInvincible ? "#ffffff" : "#ff0000"}
+                    emissiveIntensity={isInvincible ? 2 : 0.3}
+                    metalness={isInvincible ? 0.9 : 0.5}
+                    roughness={isInvincible ? 0.1 : 0.5}
+                />
             </mesh>
+
+            {/* Player invincibility effects */}
+            {isInvincible && (
+                <group
+                    ref={invincibilityEffectsRef}
+                    position={[playerRef.current?.position.x || 0, playerRef.current?.position.y || 0, playerRef.current?.position.z || 0]}
+                >
+                    {/* Inner glow */}
+                    <pointLight
+                        color="#ffffff"
+                        intensity={1.5}
+                        distance={2}
+                    />
+
+                    {/* Outer aura */}
+                    <mesh scale={[1 + Math.sin(performance.now() * 0.005) * 0.1, 1 + Math.sin(performance.now() * 0.005) * 0.1, 1]}>
+                        <sphereGeometry args={[BALL_RADIUS * 1.5, 32, 32]} />
+                        <meshStandardMaterial
+                            color="#ffffff"
+                            emissive="#ffffff"
+                            emissiveIntensity={0.5}
+                            transparent={true}
+                            opacity={0.3}
+                        />
+                    </mesh>
+
+                    {/* Particle effect */}
+                    {Array.from({ length: 8 }).map((_, i) => {
+                        const angle = (performance.now() * 0.001 + i * Math.PI * 2 / 8) % (Math.PI * 2);
+                        const radius = BALL_RADIUS * 2;
+                        return (
+                            <mesh
+                                key={i}
+                                position={[
+                                    Math.cos(angle) * radius,
+                                    Math.sin(angle) * radius,
+                                    0
+                                ]}
+                                scale={[0.1, 0.1, 0.1]}
+                            >
+                                <sphereGeometry />
+                                <meshBasicMaterial
+                                    color="#ffffff"
+                                    transparent
+                                    opacity={0.6 + Math.sin(performance.now() * 0.005) * 0.4}
+                                />
+                            </mesh>
+                        );
+                    })}
+                </group>
+            )}
         </>
     );
 }
