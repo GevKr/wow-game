@@ -11,9 +11,9 @@ const JUMP_FORCE = 10;
 const GRAVITY = 25;
 const TUNNEL_SIZE = 5; // Size of tunnel
 const TILE_SIZE = 1; // Size of floor/wall tiles
-const SEGMENT_LENGTH = 75; // Length of each tunnel segment
-const INITIAL_SEGMENTS = 2; // Initial number of segments to generate
-const EXTENSION_THRESHOLD = 100; // When to add a new segment (distance from the end)
+const SEGMENT_LENGTH = 10; // Length of each tunnel segment (reduced to 10)
+const VISIBLE_SEGMENTS = 5; // Number of segments to keep visible
+const EXTENSION_THRESHOLD = 40; // When to add a new segment (distance from the end)
 const BALL_RADIUS = 0.25; // Character size
 const FLOOR_COLORS = ["#ff91c6", "#ff7fb8", "#ff69a9", "#ff7fb8", "#ff91c6"]; // Pink floor colors
 const CEILING_COLOR = "#ff4d94"; // Darker pink for ceiling
@@ -336,7 +336,7 @@ export function Game2D() {
     // Initialize tunnel segments on first render
     useMemo(() => {
         const initialSegments: TunnelSegment[] = [];
-        for (let i = 0; i < INITIAL_SEGMENTS; i++) {
+        for (let i = 0; i < VISIBLE_SEGMENTS; i++) {
             const segment = generateTunnelSegment(i * SEGMENT_LENGTH);
             initialSegments.push(segment);
             nextSegmentZ.current = (i + 1) * SEGMENT_LENGTH;
@@ -396,7 +396,7 @@ export function Game2D() {
         return tile !== undefined && tile.exists;
     };
 
-    // Check if we need to add a new segment
+    // Check if we need to add a new segment and remove old ones
     const checkAndAddSegment = () => {
         const playerZ = tunnelPosition.current;
         const lastSegment = tunnelSegments[tunnelSegments.length - 1];
@@ -407,7 +407,14 @@ export function Game2D() {
             const newSegment = generateTunnelSegment(nextSegmentZ.current);
             nextSegmentZ.current += SEGMENT_LENGTH;
 
-            setTunnelSegments(prevSegments => [...prevSegments, newSegment]);
+            // Remove old segments that are too far behind the player
+            setTunnelSegments(prevSegments => {
+                const newSegments = [...prevSegments, newSegment];
+                // Keep only segments that are within the visible range
+                return newSegments.filter(segment =>
+                    segment.endZ > playerZ - (SEGMENT_LENGTH * 2)
+                );
+            });
         }
     };
 
@@ -702,7 +709,7 @@ export function Game2D() {
                     else if (tile.type === 'rightWall') rotation = [0, -Math.PI / 2, 0];
 
                     // Add depth-based color variation for gradient effect
-                    const depthFactor = Math.abs(tile.position[2]) / (SEGMENT_LENGTH * INITIAL_SEGMENTS);
+                    const depthFactor = Math.abs(tile.position[2]) / (SEGMENT_LENGTH * VISIBLE_SEGMENTS);
 
                     // Add pulsing effect for walls
                     let emissiveIntensity = 0.2 + depthFactor * 0.3;
@@ -732,61 +739,6 @@ export function Game2D() {
                     );
                 })}
             </group>
-
-            {/* Instructions */}
-            {gameState === 'playing' && score < 15 && (
-                <group position={[0, 0, -15]}>
-                    <mesh position={[0, 0, 0]}>
-                        <planeGeometry args={[12, 7]} />
-                        <meshBasicMaterial color="#000033" opacity={0.8} transparent={true} />
-                    </mesh>
-                    <Text
-                        position={[0, 2, 0.1]}
-                        color="white"
-                        fontSize={0.4}
-                        anchorX="center"
-                        anchorY="middle"
-                    >
-                        LEFT/RIGHT - move between lanes
-                    </Text>
-                    <Text
-                        position={[0, 1, 0.1]}
-                        color="#88ccff"
-                        fontSize={0.4}
-                        anchorX="center"
-                        anchorY="middle"
-                    >
-                        Run off edge of floor to transfer to a wall
-                    </Text>
-                    <Text
-                        position={[0, 0, 0.1]}
-                        color="white"
-                        fontSize={0.4}
-                        anchorX="center"
-                        anchorY="middle"
-                    >
-                        On walls, LEFT/RIGHT still moves between lanes!
-                    </Text>
-                    <Text
-                        position={[0, -1, 0.1]}
-                        color="white"
-                        fontSize={0.4}
-                        anchorX="center"
-                        anchorY="middle"
-                    >
-                        SPACE - jump (away from surface)
-                    </Text>
-                    <Text
-                        position={[0, -2, 0.1]}
-                        color="#ff8888"
-                        fontSize={0.4}
-                        anchorX="center"
-                        anchorY="middle"
-                    >
-                        Avoid falling through the gaps!
-                    </Text>
-                </group>
-            )}
 
             {/* Lighting */}
             <ambientLight intensity={0.4} />
