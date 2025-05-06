@@ -338,10 +338,10 @@ export function Game2D() {
 
             // Surface-specific difficulty modifiers (reduced to make fewer gaps)
             const difficultyModifiers = {
-                floor: 0.7,
-                ceiling: 0.5 + Math.sin(absoluteZ * 0.1 + surfaceSeeds.ceiling) * 0.15,
-                leftWall: 0.45 + Math.cos(absoluteZ * 0.08 + surfaceSeeds.leftWall) * 0.15,
-                rightWall: 0.55 + Math.sin(absoluteZ * 0.12 + surfaceSeeds.rightWall) * 0.1
+                floor: 0.5, // Reduced from 0.7
+                ceiling: 0.3 + Math.sin(absoluteZ * 0.1 + surfaceSeeds.ceiling) * 0.1, // Reduced from 0.5
+                leftWall: 0.25 + Math.cos(absoluteZ * 0.08 + surfaceSeeds.leftWall) * 0.1, // Reduced from 0.45
+                rightWall: 0.35 + Math.sin(absoluteZ * 0.12 + surfaceSeeds.rightWall) * 0.1 // Reduced from 0.55
             };
 
             // Safe zone at the start
@@ -350,33 +350,33 @@ export function Game2D() {
             }
             // Intro phase - very few gaps
             else if (segmentIndex === 0 && z < 40) {
-                baseDifficulty = 0.15; // Reduced from 0.2
+                baseDifficulty = 0.1; // Reduced from 0.15
             }
             // Medium sections with varying difficulty
             else {
                 // Create wave patterns of difficulty that cycle
                 const cyclePosition = absoluteZ % 50; // Difficulty cycles every 50 units
 
-                if (cyclePosition < 15) {
+                if (cyclePosition < 20) { // Increased easy section length
                     // Easier section at beginning of cycle
-                    baseDifficulty = 0.15; // Reduced from 0.2
+                    baseDifficulty = 0.1; // Reduced from 0.15
                 } else if (cyclePosition < 35) {
                     // Hard section in middle of cycle
-                    baseDifficulty = 0.35; // Reduced from 0.5
+                    baseDifficulty = 0.25; // Reduced from 0.35
                 } else {
                     // Medium section at end of cycle
-                    baseDifficulty = 0.25; // Reduced from 0.35
+                    baseDifficulty = 0.15; // Reduced from 0.25
                 }
 
-                // Random difficulty spikes (less frequent and intense)
-                if (absoluteZ > 80 && Math.random() < 0.03) { // Reduced from 0.05
+                // Random difficulty spikes (less frequent and less intense)
+                if (absoluteZ > 80 && Math.random() < 0.02) { // Reduced from 0.03
                     // Spike difficulty but less than before
-                    baseDifficulty = 0.5; // Reduced from 0.7
+                    baseDifficulty = 0.35; // Reduced from 0.5
                 }
 
-                // Gradually increase difficulty with distance
-                baseDifficulty += segmentIndex * 0.03;
-                baseDifficulty = Math.min(baseDifficulty, 0.7); // Cap difficulty
+                // Gradually increase difficulty with distance (slower progression)
+                baseDifficulty += segmentIndex * 0.02; // Reduced from 0.03
+                baseDifficulty = Math.min(baseDifficulty, 0.5); // Reduced cap from 0.7
             }
 
             // Calculate surface-specific difficulties
@@ -401,20 +401,18 @@ export function Game2D() {
                 // Pattern-based gaps - but with higher chance of tiles existing
                 if (absoluteZ % 5 === 0) {
                     // Every 5th row has alternating tiles but with more tiles intact
-                    // Original: return (x + Math.floor(offset)) % 2 !== 0;
-                    // For floor, keep original pattern
                     if (surface === 'floor') {
-                        return (x + Math.floor(offset)) % 2 !== 0;
+                        return (x + Math.floor(offset)) % 3 !== 0; // Only 1/3 gaps instead of 1/2
                     }
                     // For other surfaces, allow more tiles to exist
-                    return (x + Math.floor(offset)) % 3 !== 0; // Only 1/3 of tiles are gaps
+                    return (x + Math.floor(offset)) % 4 !== 0; // Only 1/4 of tiles are gaps
                 }
                 else if (absoluteZ % 15 === 0) {
                     // Every 15th row has special patterns with more forgiving gaps
-                    if (surface === 'floor') return x === 2 || x === 1 || x === 3; // Three lanes
-                    if (surface === 'ceiling') return x === 1 || x === 3 || x === 0; // Three lanes
-                    if (surface === 'leftWall') return x === 0 || x === 4 || x === 2; // Three lanes
-                    if (surface === 'rightWall') return x % 2 === 0 || x === 1; // Three lanes
+                    if (surface === 'floor') return x === 2 || x === 1 || x === 3 || x === 0; // Four lanes
+                    if (surface === 'ceiling') return x === 1 || x === 3 || x === 0 || x === 4; // Four lanes
+                    if (surface === 'leftWall') return x === 0 || x === 4 || x === 2 || x === 1; // Four lanes
+                    if (surface === 'rightWall') return x % 2 === 0 || x === 1 || x === 3; // Four lanes
                 }
 
                 // Special challenge patterns - with increased survival rate
@@ -422,28 +420,21 @@ export function Game2D() {
                     // More forgiving patterns
                     if (surface === 'floor') {
                         // Floor: modified zigzag with more tiles
-                        return (x + Math.floor(absoluteZ / 10)) % 3 !== 1; // 2/3 of tiles exist
+                        return (x + Math.floor(absoluteZ / 10)) % 4 !== 1; // 3/4 of tiles exist
                     } else if (surface === 'ceiling') {
                         // Ceiling: modified checker with more tiles
-                        return (x + Math.floor(absoluteZ / 10) + 1) % 3 !== 0; // 2/3 of tiles exist
+                        return (x + Math.floor(absoluteZ / 10) + 1) % 4 !== 0; // 3/4 of tiles exist
                     } else {
                         // Walls: more forgiving alternating pattern
-                        return (x + Math.floor(offset + absoluteZ / 5)) % 3 !== 2; // 2/3 of tiles exist
+                        return (x + Math.floor(offset + absoluteZ / 5)) % 4 !== 2; // 3/4 of tiles exist
                     }
                 }
-                else if (absoluteZ % 75 === 0 && absoluteZ > 75) {
-                    // More forgiving edge patterns
-                    if (surface === 'floor') return x === 0 || x === 4 || x === 2; // Add middle lane
-                    if (surface === 'ceiling') return x === 2 || x === 1; // Two lanes
-                    if (surface === 'leftWall') return x === 1 || x === 3 || x === 2; // Three lanes
-                    if (surface === 'rightWall') return x % 2 === 0 || x === 1; // Three lanes
-                }
 
-                // Apply noise to create more natural patterns, but with increased chance of tiles existing
-                const noiseValue = Math.sin(x * 0.5 + absoluteZ * 0.3 + surfaceSeeds[surface]) * 0.3 + 0.7; // Adjusted from *0.5+0.5 to *0.3+0.7
+                // Apply noise to create more natural patterns, with increased chance of tiles existing
+                const noiseValue = Math.sin(x * 0.5 + absoluteZ * 0.3 + surfaceSeeds[surface]) * 0.2 + 0.8; // Adjusted from *0.3+0.7 to *0.2+0.8
 
                 // Random gaps based on difficulty plus noise, with increased threshold for gaps
-                return Math.random() * noiseValue >= difficulty * 0.8; // Reduced actual difficulty by 20%
+                return Math.random() * noiseValue >= difficulty * 0.7; // Reduced actual difficulty by 30%
             };
 
             // Create a row of floor tiles
@@ -1222,19 +1213,89 @@ export function Game2D() {
             )}
 
             {/* Player character */}
-            <mesh
-                ref={playerRef}
+            <group
                 position={[getLanePosition(2), -TUNNEL_SIZE / 2 + BALL_RADIUS, 0]}
+                ref={playerRef}
             >
-                <sphereGeometry args={[BALL_RADIUS, 32, 32]} />
-                <meshStandardMaterial
-                    color={isInvincible ? "#ffffff" : "#ff3030"}
-                    emissive={isInvincible ? "#ffffff" : "#ff0000"}
-                    emissiveIntensity={isInvincible ? 2 : 0.3}
-                    metalness={isInvincible ? 0.9 : 0.5}
-                    roughness={isInvincible ? 0.1 : 0.5}
-                />
-            </mesh>
+                {/* Core ball */}
+                <mesh>
+                    <sphereGeometry args={[BALL_RADIUS, 32, 32]} />
+                    <meshStandardMaterial
+                        color={isInvincible ? "#ffffff" : "#ff3030"}
+                        emissive={isInvincible ? "#ffffff" : "#ff0000"}
+                        emissiveIntensity={isInvincible ? 2 : 1.2}
+                        metalness={isInvincible ? 0.9 : 0.7}
+                        roughness={isInvincible ? 0.1 : 0.2}
+                    />
+                </mesh>
+
+                {/* Energy trails and effects for non-invincible state */}
+                {!isInvincible && (
+                    <>
+                        {/* Pulsing energy ring */}
+                        <mesh
+                            rotation={[Math.PI / 2, 0, performance.now() * 0.001]}
+                        >
+                            <torusGeometry args={[BALL_RADIUS * 1.2, BALL_RADIUS * 0.1, 16, 32]} />
+                            <meshStandardMaterial
+                                color="#ff6060"
+                                emissive="#ff0000"
+                                emissiveIntensity={0.5 + Math.sin(performance.now() * 0.003) * 0.3}
+                                transparent
+                                opacity={0.7}
+                            />
+                        </mesh>
+
+                        {/* Energy particles */}
+                        {Array.from({ length: 6 }).map((_, i) => {
+                            const angle = (performance.now() * 0.001 + i * Math.PI * 2 / 6) % (Math.PI * 2);
+                            const radius = BALL_RADIUS * (1.1 + Math.sin(performance.now() * 0.002 + i) * 0.1);
+                            return (
+                                <mesh
+                                    key={i}
+                                    position={[
+                                        Math.cos(angle) * radius,
+                                        Math.sin(angle) * radius,
+                                        0
+                                    ]}
+                                    scale={[0.08, 0.08, 0.08]}
+                                >
+                                    <sphereGeometry />
+                                    <meshBasicMaterial
+                                        color="#ff8080"
+                                        transparent
+                                        opacity={0.6 + Math.sin(performance.now() * 0.004 + i * 2) * 0.4}
+                                    />
+                                </mesh>
+                            );
+                        })}
+
+                        {/* Inner glow */}
+                        <pointLight
+                            color="#ff4040"
+                            intensity={0.8 + Math.sin(performance.now() * 0.003) * 0.2}
+                            distance={1.5}
+                        />
+
+                        {/* Energy trail */}
+                        {Array.from({ length: 3 }).map((_, i) => (
+                            <mesh
+                                key={`trail-${i}`}
+                                position={[0, 0, i * 0.1]}
+                                scale={[1 - (i * 0.1), 1 - (i * 0.1), 1]}
+                            >
+                                <sphereGeometry args={[BALL_RADIUS, 16, 16]} />
+                                <meshBasicMaterial
+                                    color="#ff6060"
+                                    transparent
+                                    opacity={0.3 - (i * 0.1)}
+                                    depthWrite={false}
+                                />
+                            </mesh>
+                        ))}
+                    </>
+                )}
+            </group>
 
             {/* Player invincibility effects */}
             {isInvincible && (
