@@ -102,18 +102,35 @@ export function Game2D() {
         const totalLanes = 5;
         const length = TUNNEL_LENGTH;
 
+        // Create unique difficulty seeds for each surface
+        // These create offset patterns to avoid symmetry
+        const surfaceSeeds = {
+            floor: Math.random() * 1000,
+            ceiling: Math.random() * 1000,
+            leftWall: Math.random() * 1000,
+            rightWall: Math.random() * 1000
+        };
+
         // Generate tiles for the tunnel
         for (let z = 0; z < length; z++) {
-            // Create phases of difficulty instead of linear progression
-            let phaseDifficulty = 0;
+            // Base difficulty values for this segment
+            let baseDifficulty = 0;
+
+            // Surface-specific difficulty modifiers (reduced to make fewer gaps)
+            const difficultyModifiers = {
+                floor: 0.7, // Reduced from 1.0 for fewer gaps
+                ceiling: 0.5 + Math.sin(z * 0.1 + surfaceSeeds.ceiling) * 0.15, // Varies between 0.35-0.65
+                leftWall: 0.45 + Math.cos(z * 0.08 + surfaceSeeds.leftWall) * 0.15, // Varies between 0.3-0.6
+                rightWall: 0.55 + Math.sin(z * 0.12 + surfaceSeeds.rightWall) * 0.1 // Varies between 0.45-0.65
+            };
 
             // Safe zone at the start
             if (z < 15) {
-                phaseDifficulty = 0; // No gaps
+                baseDifficulty = 0; // No gaps
             }
-            // Intro phase - few gaps
+            // Intro phase - very few gaps
             else if (z < 40) {
-                phaseDifficulty = 0.2;
+                baseDifficulty = 0.15; // Reduced from 0.2
             }
             // Medium sections with varying difficulty
             else {
@@ -122,64 +139,104 @@ export function Game2D() {
 
                 if (cyclePosition < 15) {
                     // Easier section at beginning of cycle
-                    phaseDifficulty = 0.2;
+                    baseDifficulty = 0.15; // Reduced from 0.2
                 } else if (cyclePosition < 35) {
                     // Hard section in middle of cycle
-                    phaseDifficulty = 0.6;
+                    baseDifficulty = 0.35; // Reduced from 0.5
                 } else {
                     // Medium section at end of cycle
-                    phaseDifficulty = 0.4;
+                    baseDifficulty = 0.25; // Reduced from 0.35
                 }
 
-                // Random difficulty spikes
-                if (z > 80 && Math.random() < 0.05) {
-                    // 5% chance of extra difficult section
-                    phaseDifficulty = 0.8;
+                // Random difficulty spikes (less frequent and intense)
+                if (z > 80 && Math.random() < 0.03) { // Reduced from 0.05
+                    // Spike difficulty but less than before
+                    baseDifficulty = 0.5; // Reduced from 0.7
                 }
             }
 
+            // Calculate surface-specific difficulties
+            const surfaceDifficulty = {
+                floor: baseDifficulty * difficultyModifiers.floor,
+                ceiling: baseDifficulty * difficultyModifiers.ceiling,
+                leftWall: baseDifficulty * difficultyModifiers.leftWall,
+                rightWall: baseDifficulty * difficultyModifiers.rightWall
+            };
+
+            // Helper function to determine if tile should exist based on position and difficulty
+            const shouldTileExist = (surface: Surface, x: number, z: number) => {
+                // Safe zone at the start
+                if (z < 15) return true;
+
+                // Get the appropriate difficulty for this surface
+                const difficulty = surfaceDifficulty[surface];
+
+                // Surface-specific offset to avoid symmetry
+                const offset = surfaceSeeds[surface] % 10;
+
+                // Pattern-based gaps - but with higher chance of tiles existing
+                if (z % 5 === 0) {
+                    // Every 5th row has alternating tiles but with more tiles intact
+                    // Original: return (x + Math.floor(offset)) % 2 !== 0;
+                    // For floor, keep original pattern
+                    if (surface === 'floor') {
+                        return (x + Math.floor(offset)) % 2 !== 0;
+                    }
+                    // For other surfaces, allow more tiles to exist
+                    return (x + Math.floor(offset)) % 3 !== 0; // Only 1/3 of tiles are gaps
+                }
+                else if (z % 15 === 0) {
+                    // Every 15th row has special patterns with more forgiving gaps
+                    if (surface === 'floor') return x === 2 || x === 1 || x === 3; // Three lanes
+                    if (surface === 'ceiling') return x === 1 || x === 3 || x === 0; // Three lanes
+                    if (surface === 'leftWall') return x === 0 || x === 4 || x === 2; // Three lanes
+                    if (surface === 'rightWall') return x % 2 === 0 || x === 1; // Three lanes
+                }
+
+                // Special challenge patterns - with increased survival rate
+                if (z % 40 === 0 && z > 50) {
+                    // More forgiving patterns
+                    if (surface === 'floor') {
+                        // Floor: modified zigzag with more tiles
+                        return (x + Math.floor(z / 10)) % 3 !== 1; // 2/3 of tiles exist
+                    } else if (surface === 'ceiling') {
+                        // Ceiling: modified checker with more tiles
+                        return (x + Math.floor(z / 10) + 1) % 3 !== 0; // 2/3 of tiles exist
+                    } else {
+                        // Walls: more forgiving alternating pattern
+                        return (x + Math.floor(offset + z / 5)) % 3 !== 2; // 2/3 of tiles exist
+                    }
+                }
+                else if (z % 75 === 0 && z > 75) {
+                    // More forgiving edge patterns
+                    if (surface === 'floor') return x === 0 || x === 4 || x === 2; // Add middle lane
+                    if (surface === 'ceiling') return x === 2 || x === 1; // Two lanes
+                    if (surface === 'leftWall') return x === 1 || x === 3 || x === 2; // Three lanes
+                    if (surface === 'rightWall') return x % 2 === 0 || x === 1; // Three lanes
+                }
+
+                // Apply noise to create more natural patterns, but with increased chance of tiles existing
+                const noiseValue = Math.sin(x * 0.5 + z * 0.3 + surfaceSeeds[surface]) * 0.3 + 0.7; // Adjusted from *0.5+0.5 to *0.3+0.7
+
+                // Random gaps based on difficulty plus noise, with increased threshold for gaps
+                return Math.random() * noiseValue >= difficulty * 0.8; // Reduced actual difficulty by 20%
+            };
+
             // Create a row of floor tiles
             for (let x = 0; x < totalLanes; x++) {
-                // Create a pattern of missing floor tiles to make visible gaps
-                let tileExists = true;
+                // Create floor tiles with gaps
+                let floorTileExists = shouldTileExist('floor', x, z);
 
-                // Pattern-based gaps
-                if (z > 15) {
-                    // Create predictable patterns at intervals
-                    if (z % 5 === 0) {
-                        // Every 5th row has alternating tiles missing
-                        tileExists = x % 2 !== 0;
-                    }
-                    else if (z % 15 === 0) {
-                        // Every 15th row only has middle lane
-                        tileExists = x === 2;
-                    }
-                    // Random gaps based on phase difficulty
-                    else if (Math.random() < phaseDifficulty) {
-                        tileExists = false;
-                    }
+                // Ensure there's always at least one safe path on the floor
+                const existingGapsInRow = tiles.filter(t =>
+                    t.type === 'floor' &&
+                    t.position[2] === -z &&
+                    !t.exists
+                ).length;
 
-                    // Special challenge patterns
-                    if (z % 40 === 0 && z > 50) {
-                        // Create zigzag pattern
-                        tileExists = (x + Math.floor(z / 10)) % 2 === 0;
-                    }
-                    else if (z % 75 === 0 && z > 75) {
-                        // Only edge tiles exist - hard jump
-                        tileExists = (x === 0 || x === 4);
-                    }
-
-                    // Ensure there's always at least one safe path
-                    const existingGapsInRow = tiles.filter(t =>
-                        t.type === 'floor' &&
-                        t.position[2] === -z &&
-                        !t.exists
-                    ).length;
-
-                    // Don't make all tiles in a row gaps (impossible to pass)
-                    if (!tileExists && existingGapsInRow >= totalLanes - 1) {
-                        tileExists = true;
-                    }
+                // More forgiving floor - ensure at least 2 floor tiles exist per row
+                if (!floorTileExists && existingGapsInRow >= totalLanes - 2) {
+                    floorTileExists = true;
                 }
 
                 // Floor tile
@@ -191,11 +248,12 @@ export function Game2D() {
                     ] as [number, number, number],
                     size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
                     type: 'floor',
-                    color: tileExists ? FLOOR_COLORS[x] : 'black',
-                    exists: tileExists
+                    color: floorTileExists ? FLOOR_COLORS[x] : 'black',
+                    exists: floorTileExists
                 });
 
-                // Ceiling tile (always exists)
+                // Ceiling tile (with possible gaps)
+                const ceilingTileExists = shouldTileExist('ceiling', x, z);
                 tiles.push({
                     position: [
                         getLanePosition(x, totalLanes),
@@ -204,14 +262,15 @@ export function Game2D() {
                     ] as [number, number, number],
                     size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
                     type: 'ceiling',
-                    color: CEILING_COLOR,
-                    exists: true
+                    color: ceilingTileExists ? CEILING_COLOR : 'black',
+                    exists: ceilingTileExists
                 });
             }
 
-            // Left and right wall tiles
+            // Left and right wall tiles (with possible gaps)
             for (let y = 0; y < totalLanes; y++) {
                 // Left wall
+                const leftWallTileExists = shouldTileExist('leftWall', y, z);
                 tiles.push({
                     position: [
                         -TUNNEL_SIZE / 2, // Left side
@@ -220,11 +279,12 @@ export function Game2D() {
                     ] as [number, number, number],
                     size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
                     type: 'leftWall',
-                    color: WALL_COLOR,
-                    exists: true
+                    color: leftWallTileExists ? WALL_COLOR : 'black',
+                    exists: leftWallTileExists
                 });
 
                 // Right wall
+                const rightWallTileExists = shouldTileExist('rightWall', y, z);
                 tiles.push({
                     position: [
                         TUNNEL_SIZE / 2, // Right side
@@ -233,8 +293,8 @@ export function Game2D() {
                     ] as [number, number, number],
                     size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
                     type: 'rightWall',
-                    color: WALL_COLOR,
-                    exists: true
+                    color: rightWallTileExists ? WALL_COLOR : 'black',
+                    exists: rightWallTileExists
                 });
             }
         }
