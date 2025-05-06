@@ -302,19 +302,8 @@ export function Game2D() {
     };
 
     // Main game loop
-    useFrame((state, delta) => {
+    useFrame((_, delta) => {
         if (gameState === 'gameOver') return;
-
-        // Add debug info every X frames
-        const frameCount = Math.floor(state.clock.getElapsedTime() * 60);
-        if (frameCount % 60 === 0) {
-            console.log("Current state:", {
-                surface: currentSurface,
-                lane: currentLane,
-                isJumping: isJumping.current,
-                isMoving: isMoving.current
-            });
-        }
 
         if (gameState === 'playing' && playerRef.current) {
             const playerPos = playerRef.current.position;

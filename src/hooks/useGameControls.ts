@@ -7,6 +7,11 @@ export type Surface = 'floor' | 'ceiling' | 'leftWall' | 'rightWall';
 // Game states
 export type GameState = 'start' | 'playing' | 'gameOver';
 
+// Each surface has LANES_PER_SURFACE lanes
+// Total lanes = 4 surfaces * LANES_PER_SURFACE
+const LANES_PER_SURFACE = 5;
+const TOTAL_LANES = 4 * LANES_PER_SURFACE; // 20 lanes (0-19)
+
 type UseGameControlsProps = {
     // Player state
     playerRef: MutableRefObject<Mesh | null>;
@@ -87,6 +92,72 @@ export function useGameControls({
     getLanePosition,
 }: UseGameControlsProps) {
 
+    /**
+     * Helper function to get the surface and local lane from a global lane number
+     * Floor:     0-4 (lanes 0-4 from left to right)
+     * RightWall: 5-9 (lanes 0-4 from top to bottom)
+     * Ceiling:   10-14 (lanes 4-0 from left to right - REVERSED)
+     * LeftWall:  15-19 (lanes 4-0 from top to bottom - REVERSED)
+     */
+    const getSurfaceAndLocalLane = (globalLane: number) => {
+        // Ensure lane is within 0-19 range
+        const normalizedLane = ((globalLane % TOTAL_LANES) + TOTAL_LANES) % TOTAL_LANES;
+
+        // Determine surface based on lane range
+        let surface: Surface;
+        let localLane: number;
+
+        if (normalizedLane < LANES_PER_SURFACE) {
+            // Floor: 0-4 → local 0-4
+            surface = 'floor';
+            localLane = normalizedLane % LANES_PER_SURFACE;
+        } else if (normalizedLane < 2 * LANES_PER_SURFACE) {
+            // Right Wall: 5-9 → local 0-4
+            surface = 'rightWall';
+            localLane = normalizedLane % LANES_PER_SURFACE;
+        } else if (normalizedLane < 3 * LANES_PER_SURFACE) {
+            // Ceiling: 10-14 → local 4-0 (REVERSED)
+            surface = 'ceiling';
+            localLane = LANES_PER_SURFACE - 1 - (normalizedLane % LANES_PER_SURFACE);
+        } else {
+            // Left Wall: 15-19 → local 4-0 (REVERSED)
+            surface = 'leftWall';
+            localLane = LANES_PER_SURFACE - 1 - (normalizedLane % LANES_PER_SURFACE);
+        }
+
+        return { surface, localLane };
+    };
+
+    /**
+     * Helper function to get the global lane (0-19) from a surface and local lane
+     */
+    const getGlobalLane = (surface: Surface, localLane: number) => {
+        let globalLane: number;
+
+        switch (surface) {
+            case 'floor':
+                // Floor: local 0-4 → global 0-4
+                globalLane = localLane;
+                break;
+            case 'rightWall':
+                // Right Wall: local 0-4 → global 5-9
+                globalLane = LANES_PER_SURFACE + localLane;
+                break;
+            case 'ceiling':
+                // Ceiling: local 4-0 → global 10-14 (REVERSED)
+                globalLane = 2 * LANES_PER_SURFACE + (LANES_PER_SURFACE - 1 - localLane);
+                break;
+            case 'leftWall':
+                // Left Wall: local 4-0 → global 15-19 (REVERSED)
+                globalLane = 3 * LANES_PER_SURFACE + (LANES_PER_SURFACE - 1 - localLane);
+                break;
+            default:
+                globalLane = 0;
+        }
+
+        return globalLane;
+    };
+
     // Get gravity direction based on current surface
     const getGravityDirection = () => {
         switch (currentSurface) {
@@ -131,106 +202,98 @@ export function useGameControls({
         isJumping.current = false;
     };
 
-    // Handle transition to a different surface
-    const transitionToSurface = (newSurface: Surface) => {
-        if (newSurface === currentSurface || !playerRef.current) return;
+    // Set player position based on surface and lane
+    const positionPlayerAtLane = (surface: Surface, localLane: number) => {
+        if (!playerRef.current) return;
 
-        const previousSurface = currentSurface; // Store previous surface for logic below
+        const position = getLanePosition(localLane, LANES_PER_SURFACE);
 
-        console.log('Surface Transition:', {
-            from: previousSurface,
-            to: newSurface,
-            playerPosition: playerRef.current.position.clone(), // Clone for safety
-            currentLane
-        });
-
-        // Set camera rotation based on surface
-        const euler = new Euler();
-        let targetLane = currentLane; // Default to keeping current lane
-
-        switch (newSurface) {
+        switch (surface) {
             case 'floor':
-                euler.set(0, 0, 0);
-                // From Left Wall (bottom) -> land on leftmost lane (0)
-                // From Right Wall (bottom) -> land on rightmost lane (LANE_COUNT - 1)
-                if (previousSurface === 'leftWall') targetLane = 0;
-                else if (previousSurface === 'rightWall') targetLane = LANE_COUNT - 1;
-                // From ceiling -> keep current lane for continuous running
-
-                setCurrentLane(targetLane);
                 playerRef.current.position.set(
-                    getLanePosition(targetLane),
+                    position,
                     -TUNNEL_SIZE / 2 + BALL_RADIUS,
                     playerRef.current.position.z
                 );
-                targetX.current = getLanePosition(targetLane);
+                targetX.current = position;
                 break;
-
             case 'ceiling':
-                euler.set(0, 0, Math.PI);
-                if (previousSurface === 'leftWall') {
-                    // From Left Wall (top) -> land on leftmost lane (0)
-                    targetLane = 0;
-                } else if (previousSurface === 'rightWall') {
-                    // From Right Wall (top) -> land on rightmost lane (LANE_COUNT - 1)
-                    targetLane = LANE_COUNT - 1;
-                }
-                // From floor -> keep current lane for continuous running
-                console.log("Setting up ceiling transition, targetLane:", targetLane);
-
-                setCurrentLane(targetLane);
                 playerRef.current.position.set(
-                    getLanePosition(targetLane),
+                    position,
                     TUNNEL_SIZE / 2 - BALL_RADIUS,
                     playerRef.current.position.z
                 );
-                targetX.current = getLanePosition(targetLane);
+                targetX.current = position;
                 break;
-
             case 'leftWall':
-                euler.set(0, 0, -Math.PI / 2);
-                // From Floor (left edge) or Ceiling (left edge) -> land on top lane (0)
-                if (previousSurface === 'floor' || previousSurface === 'ceiling') {
-                    targetLane = 0;
-                }
-                console.log("Setting up left wall transition, targetLane:", targetLane);
-
-                setCurrentLane(targetLane);
                 playerRef.current.position.set(
                     -TUNNEL_SIZE / 2 + BALL_RADIUS,
-                    getLanePosition(targetLane),
+                    position,
                     playerRef.current.position.z
                 );
-                targetY.current = getLanePosition(targetLane);
+                targetY.current = position;
                 break;
-
             case 'rightWall':
-                euler.set(0, 0, Math.PI / 2);
-                // From Floor (right edge) or Ceiling (right edge) -> land on top lane (0)
-                if (previousSurface === 'floor' || previousSurface === 'ceiling') {
-                    targetLane = 0;
-                }
-                console.log("Setting up right wall transition, targetLane:", targetLane);
-
-                setCurrentLane(targetLane);
                 playerRef.current.position.set(
                     TUNNEL_SIZE / 2 - BALL_RADIUS,
-                    getLanePosition(targetLane),
+                    position,
                     playerRef.current.position.z
                 );
-                targetY.current = getLanePosition(targetLane);
+                targetY.current = position;
                 break;
         }
+    };
 
-        // Update surface *after* positioning
-        setCurrentSurface(newSurface);
-        targetCameraRotation.current = euler;
-        rotationProgress.current = 1.0; // Keep the smooth transition
+    // Rotate camera by 90 degrees in the specified direction
+    const rotateCameraRelative = (direction: 'left' | 'right') => {
+        // Get the current rotation around Z axis
+        const currentRotation = targetCameraRotation.current.z;
 
-        // Reset player velocity and state
-        playerVelocity.current.set(0, 0, 0);
-        isJumping.current = false;
-        isMoving.current = false; // Reset movement state on transition
+        // Determine the amount to rotate based on direction
+        // right = counterclockwise = +90 degrees
+        // left = clockwise = -90 degrees
+        const rotationAmount = direction === 'right' ? Math.PI / 2 : -Math.PI / 2;
+
+        // Calculate the new rotation angle
+        const newRotation = currentRotation + rotationAmount;
+
+        // Set the new rotation
+        targetCameraRotation.current.set(0, 0, newRotation);
+        rotationProgress.current = 1.0; // Trigger smooth transition
+
+        console.log(`Rotating camera ${direction}, from ${currentRotation} to ${newRotation}`);
+    };
+
+    // Move player to a specific global lane
+    const moveToGlobalLane = (globalLane: number, direction: 'left' | 'right') => {
+        if (!playerRef.current) return;
+
+        // Get surface and local lane from global lane
+        const { surface, localLane } = getSurfaceAndLocalLane(globalLane);
+
+        // If surface is changing, we need to handle transition
+        if (surface !== currentSurface) {
+            console.log(`Transitioning: ${currentSurface} -> ${surface} (global lane: ${globalLane}, local lane: ${localLane})`);
+
+            // Update surface first
+            setCurrentSurface(surface);
+
+            // Rotate camera based on movement direction
+            rotateCameraRelative(direction);
+
+            // Reset movement state
+            playerVelocity.current.set(0, 0, 0);
+            isJumping.current = false;
+        }
+
+        // Update lane
+        setCurrentLane(localLane);
+
+        // Position player
+        positionPlayerAtLane(surface, localLane);
+
+        // Mark as moving (for animation)
+        isMoving.current = true;
     };
 
     // Set up keyboard controls
@@ -243,171 +306,34 @@ export function useGameControls({
 
             if (gameState !== 'playing') return;
 
+            // Get current global lane
+            const currentGlobalLane = getGlobalLane(currentSurface, currentLane);
+
             // Log key events for left/right movement
             if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'ArrowRight' || e.key === 'd') {
                 console.log('Movement Key:', {
                     key: e.key,
                     currentSurface,
                     currentLane,
+                    globalLane: currentGlobalLane,
                     isMoving: isMoving.current,
                     isJumping: isJumping.current
                 });
             }
 
-            // Only prevent lane changes if we're already in the process of moving between lanes
-            // But allow transitions between surfaces even during lane movement
-            const isWallTransition =
-                (e.key === 'ArrowLeft' || e.key === 'a') && currentLane === 0 ||
-                (e.key === 'ArrowRight' || e.key === 'd') && currentLane === LANE_COUNT - 1;
+            // Prevent lane changes if already moving between lanes
+            // But allow direction keys to be processed for logging
+            if (isMoving.current) return;
 
-            // Allow wall transitions even during movement, but prevent lane changes if already moving
-            if (isMoving.current && !isWallTransition) return;
-
-            // Handle movement based on current surface
-            switch (currentSurface) {
-                case 'floor':
-                    // On floor, left/right to move and at edges transition to walls
-                    if ((e.key === 'ArrowLeft' || e.key === 'a')) {
-                        if (currentLane > 0) {
-                            // Normal movement
-                            const newLane = currentLane - 1;
-                            setCurrentLane(newLane);
-                            targetX.current = getLanePosition(newLane);
-                            isMoving.current = true;
-                            if (!isJumping.current) {
-                                snapToSurface();
-                            }
-                        } else {
-                            // At leftmost lane, transition to left wall
-                            console.log("Transitioning: floor -> leftWall");
-                            transitionToSurface('leftWall');
-                        }
-                    } else if ((e.key === 'ArrowRight' || e.key === 'd')) {
-                        if (currentLane < LANE_COUNT - 1) {
-                            // Normal movement
-                            const newLane = currentLane + 1;
-                            setCurrentLane(newLane);
-                            targetX.current = getLanePosition(newLane);
-                            isMoving.current = true;
-                            if (!isJumping.current) {
-                                snapToSurface();
-                            }
-                        } else {
-                            // At rightmost lane, transition to right wall
-                            console.log("Transitioning: floor -> rightWall");
-                            transitionToSurface('rightWall');
-                        }
-                    }
-                    break;
-
-                case 'rightWall':
-                    // On right wall, pressing LEFT goes UP (towards ceiling), RIGHT goes DOWN (towards floor)
-                    if ((e.key === 'ArrowLeft' || e.key === 'a')) {
-                        // UP movement (towards ceiling)
-                        if (currentLane > 0) {
-                            // Normal movement up the wall
-                            const newLane = currentLane - 1;
-                            setCurrentLane(newLane);
-                            targetY.current = getLanePosition(newLane);
-                            isMoving.current = true;
-                            if (!isJumping.current) {
-                                snapToSurface();
-                            }
-                        } else {
-                            // At top lane (0), transition to ceiling
-                            console.log("Transitioning: rightWall -> ceiling");
-                            transitionToSurface('ceiling');
-                        }
-                    } else if ((e.key === 'ArrowRight' || e.key === 'd')) {
-                        // DOWN movement (towards floor)
-                        if (currentLane < LANE_COUNT - 1) {
-                            // Normal movement down the wall
-                            const newLane = currentLane + 1;
-                            setCurrentLane(newLane);
-                            targetY.current = getLanePosition(newLane);
-                            isMoving.current = true;
-                            if (!isJumping.current) {
-                                snapToSurface();
-                            }
-                        } else {
-                            // At bottom lane (4), transition to floor
-                            console.log("Transitioning: rightWall -> floor");
-                            transitionToSurface('floor');
-                        }
-                    }
-                    break;
-
-                case 'ceiling':
-                    // On ceiling, left/right to move and at edges transition to walls
-                    if ((e.key === 'ArrowLeft' || e.key === 'a')) {
-                        if (currentLane > 0) {
-                            // Normal movement (left on ceiling)
-                            const newLane = currentLane - 1;
-                            setCurrentLane(newLane);
-                            targetX.current = getLanePosition(newLane);
-                            isMoving.current = true;
-                            if (!isJumping.current) {
-                                snapToSurface();
-                            }
-                        } else {
-                            // At leftmost lane, transition to left wall
-                            console.log("Transitioning: ceiling -> leftWall");
-                            transitionToSurface('leftWall');
-                        }
-                    } else if ((e.key === 'ArrowRight' || e.key === 'd')) {
-                        if (currentLane < LANE_COUNT - 1) {
-                            // Normal movement (right on ceiling)
-                            const newLane = currentLane + 1;
-                            setCurrentLane(newLane);
-                            targetX.current = getLanePosition(newLane);
-                            isMoving.current = true;
-                            if (!isJumping.current) {
-                                snapToSurface();
-                            }
-                        } else {
-                            // At rightmost lane, transition to right wall
-                            console.log("Transitioning: ceiling -> rightWall");
-                            transitionToSurface('rightWall');
-                        }
-                    }
-                    break;
-
-                case 'leftWall':
-                    // On left wall, pressing RIGHT goes UP (towards ceiling), LEFT goes DOWN (towards floor)
-                    if ((e.key === 'ArrowRight' || e.key === 'd')) {
-                        // UP movement (towards ceiling)
-                        if (currentLane > 0) {
-                            // Normal movement up the wall
-                            const newLane = currentLane - 1;
-                            setCurrentLane(newLane);
-                            targetY.current = getLanePosition(newLane);
-                            isMoving.current = true;
-                            if (!isJumping.current) {
-                                snapToSurface();
-                            }
-                        } else {
-                            // At top lane (0), transition to ceiling
-                            console.log("Transitioning: leftWall -> ceiling");
-                            transitionToSurface('ceiling');
-                        }
-                    } else if ((e.key === 'ArrowLeft' || e.key === 'a')) {
-                        // DOWN movement (towards floor)
-                        if (currentLane < LANE_COUNT - 1) {
-                            // Normal movement down the wall
-                            const newLane = currentLane + 1;
-                            setCurrentLane(newLane);
-                            targetY.current = getLanePosition(newLane);
-                            isMoving.current = true;
-                            if (!isJumping.current) {
-                                snapToSurface();
-                            }
-                        } else {
-                            // At bottom lane (4), transition to floor
-                            console.log("Transitioning: leftWall -> floor");
-                            transitionToSurface('floor');
-                        }
-                    }
-                    break;
+            // Handle movement with new global lane system
+            if (e.key === 'ArrowRight' || e.key === 'd') {
+                // Move clockwise (increment lane)
+                const nextGlobalLane = (currentGlobalLane + 1) % TOTAL_LANES;
+                moveToGlobalLane(nextGlobalLane, 'right');
+            } else if (e.key === 'ArrowLeft' || e.key === 'a') {
+                // Move counter-clockwise (decrement lane)
+                const nextGlobalLane = (currentGlobalLane - 1 + TOTAL_LANES) % TOTAL_LANES;
+                moveToGlobalLane(nextGlobalLane, 'left');
             }
 
             // Jump with space
@@ -426,9 +352,14 @@ export function useGameControls({
                 // Reset game state
                 setGameState('playing');
                 setScore(0);
-                setCurrentLane(2);
+
+                // Reset to floor, middle lane
+                const initialLane = 2; // Middle lane of floor
                 setCurrentSurface('floor');
-                targetX.current = getLanePosition(2);
+                setCurrentLane(initialLane);
+
+                // Position player
+                positionPlayerAtLane('floor', initialLane);
                 tunnelPosition.current = 0;
 
                 // Reset camera rotation
@@ -438,9 +369,8 @@ export function useGameControls({
                 // Reset falling state
                 setIsFallingThroughGap(false);
 
-                // Reset player
+                // Reset player state
                 if (playerRef.current) {
-                    playerRef.current.position.set(getLanePosition(2), -TUNNEL_SIZE / 2 + BALL_RADIUS, 0);
                     playerVelocity.current.set(0, 0, 0);
                     isJumping.current = false;
                     isMoving.current = false;
@@ -468,6 +398,8 @@ export function useGameControls({
     return {
         getGravityDirection,
         snapToSurface,
-        transitionToSurface
+        getSurfaceAndLocalLane, // Export for testing/debugging
+        getGlobalLane, // Export for testing/debugging
+        moveToGlobalLane // Export for programmatic movement
     };
 } 
