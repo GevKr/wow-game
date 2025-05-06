@@ -721,6 +721,15 @@
     suspend-react "^0.1.3"
     zustand "^3.7.1"
 
+"@react-three/postprocessing@^3.0.4":
+  version "3.0.4"
+  resolved "https://repo.dev.wixpress.com/artifactory/api/npm/npm-repos/@react-three/postprocessing/-/postprocessing-3.0.4.tgz#e2379eb0b953d1cc0c4b8ac94dc76256f4c07062"
+  integrity sha512-e4+F5xtudDYvhxx3y0NtWXpZbwvQ0x1zdOXWTbXMK6fFLVDd4qucN90YaaStanZGS4Bd5siQm0lGL/5ogf8iDQ==
+  dependencies:
+    maath "^0.6.0"
+    n8ao "^1.9.4"
+    postprocessing "^6.36.6"
+
 "@rollup/rollup-android-arm-eabi@4.40.1":
   version "4.40.1"
   resolved "https://registry.npmjs.org/@rollup/rollup-android-arm-eabi/-/rollup-android-arm-eabi-4.40.1.tgz#e1562d360bca73c7bef6feef86098de3a2f1d442"
@@ -2433,6 +2442,11 @@ maath@^0.10.8:
   resolved "https://registry.npmjs.org/maath/-/maath-0.10.8.tgz"
   integrity sha512-tRvbDF0Pgqz+9XUa4jjfgAQ8/aPKmQdWXilFu2tMy4GWj4NOsx99HlULO4IeREfbO3a0sA145DZYyvXPkybm0g==
 
+maath@^0.6.0:
+  version "0.6.0"
+  resolved "https://repo.dev.wixpress.com/artifactory/api/npm/npm-repos/maath/-/maath-0.6.0.tgz#7841d0fb95bbb37d19b08b7c5458ef70190950d2"
+  integrity sha512-dSb2xQuP7vDnaYqfoKzlApeRcR2xtN8/f7WV/TMAkBC8552TwTLtOO0JTcSygkYMjNDPoo6V01jTw/aPi4JrMw==
+
 magic-string@^0.30.17:
   version "0.30.17"
   resolved "https://repo.dev.wixpress.com/artifactory/api/npm/npm-repos/magic-string/-/magic-string-0.30.17.tgz#450a449673d2460e5bbcfba9a61916a1714c7453"
@@ -2513,6 +2527,11 @@ ms@^2.1.3:
   version "2.1.3"
   resolved "https://registry.npmjs.org/ms/-/ms-2.1.3.tgz"
   integrity sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==
+
+n8ao@^1.9.4:
+  version "1.9.6"
+  resolved "https://repo.dev.wixpress.com/artifactory/api/npm/npm-repos/n8ao/-/n8ao-1.9.6.tgz#97890a64bfe4e0768ebb4b7ef0983405002afacb"
+  integrity sha512-KV7Xwh79U+PSb2FhmMaCkhQVW9UGQy0moUEPkJmWLYZZuWqjTTWPYCGVRIFg5dd4z8YnUegR8pq4W39NAwV3Dw==
 
 nanoid@^3.3.8:
   version "3.3.11"
@@ -2659,6 +2678,11 @@ postcss@^8.4.35, postcss@^8.4.43, postcss@^8.5.3:
     nanoid "^3.3.8"
     picocolors "^1.1.1"
     source-map-js "^1.2.1"
+
+postprocessing@^6.36.6, postprocessing@^6.37.3:
+  version "6.37.3"
+  resolved "https://repo.dev.wixpress.com/artifactory/api/npm/npm-repos/postprocessing/-/postprocessing-6.37.3.tgz#33d4f287044bb41c84316d1a91eabdb4458b442f"
+  integrity sha512-2FzfZg41Ml/ddvSalLdCz7H53Wmr/ZvK238fauTG1CI97+65BDgo1dNH6AKhAWc5q9ngpyG5EYiXVbNCl2t1iA==
 
 potpack@^1.0.1:
   version "1.0.2"

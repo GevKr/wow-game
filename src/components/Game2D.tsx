@@ -3,10 +3,13 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { Text, Stars } from '@react-three/drei';
 import { Vector3, Mesh, Group, DoubleSide, Euler, Matrix4 } from 'three';
 import { useGameControls, Surface, GameState } from '../hooks/useGameControls';
+import { EffectComposer, Motion } from '@react-three/postprocessing';
 
 // Game configuration
 const INITIAL_MOVE_SPEED = 4; // Initial speed the character runs forward
 const SPEED_INCREASE = 0.5; // Speed increase per color change
+const BOOST_AMOUNT = 3; // Speed boost when pressing up (increased from 2 to 3)
+const BOOST_DURATION = 500; // Duration of boost in milliseconds
 const SIDE_SPEED = 8; // Speed of side movement
 const JUMP_FORCE = 10;
 const GRAVITY = 25;
@@ -92,6 +95,9 @@ export function Game2D() {
     const isDebugMode = useRef(false);
     const currentSpeed = useRef(INITIAL_MOVE_SPEED);
     const lastColorIndex = useRef(0);
+    const isBoostActive = useRef(false);
+    const boostTimeout = useRef<NodeJS.Timeout | null>(null);
+    const canBoost = useRef(true);
 
     // Track generated tunnel segments
     const [tunnelSegments, setTunnelSegments] = useState<TunnelSegment[]>([]);
@@ -114,6 +120,26 @@ export function Game2D() {
     // World state
     const tunnelRef = useRef<Group>(null);
     const tunnelPosition = useRef(0); // Tracks how far player has moved
+
+    // Add motion blur strength state
+    const [blurStrength, setBlurStrength] = useState(0);
+
+    // Update blur effect when boost state changes
+    useEffect(() => {
+        let blurAnimation: number;
+
+        const animateBlur = () => {
+            if (isBoostActive.current && blurStrength < 0.5) {
+                setBlurStrength(prev => Math.min(prev + 0.1, 0.5));
+            } else if (!isBoostActive.current && blurStrength > 0) {
+                setBlurStrength(prev => Math.max(prev - 0.1, 0));
+            }
+            blurAnimation = requestAnimationFrame(animateBlur);
+        };
+
+        blurAnimation = requestAnimationFrame(animateBlur);
+        return () => cancelAnimationFrame(blurAnimation);
+    }, [blurStrength]);
 
     // Use our game controls hook
     const { getGravityDirection } = useGameControls({
@@ -163,6 +189,50 @@ export function Game2D() {
 
         window.addEventListener('keydown', handleKeyPress);
         return () => window.removeEventListener('keydown', handleKeyPress);
+    }, [gameState]);
+
+    // Add boost control
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (gameState === 'playing' && event.key === 'ArrowUp' && canBoost.current && !isBoostActive.current) {
+                // Activate boost
+                isBoostActive.current = true;
+                canBoost.current = false;
+
+                // Clear any existing timeout
+                if (boostTimeout.current) {
+                    clearTimeout(boostTimeout.current);
+                }
+
+                // Set timeout to deactivate boost
+                boostTimeout.current = setTimeout(() => {
+                    isBoostActive.current = false;
+                    // Add a small delay before allowing next boost
+                    setTimeout(() => {
+                        canBoost.current = true;
+                    }, 100);
+                }, BOOST_DURATION);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            if (boostTimeout.current) {
+                clearTimeout(boostTimeout.current);
+            }
+        };
+    }, [gameState]);
+
+    // Reset boost state when game restarts
+    useEffect(() => {
+        if (gameState === 'start') {
+            isBoostActive.current = false;
+            canBoost.current = true;
+            if (boostTimeout.current) {
+                clearTimeout(boostTimeout.current);
+            }
+        }
     }, [gameState]);
 
     // Generate a tunnel segment starting at the given Z position
@@ -490,8 +560,9 @@ export function Game2D() {
                 lastColorIndex.current = currentColorIndex;
             }
 
-            // Auto-move forward at current speed
-            const forwardSpeed = currentSpeed.current * delta;
+            // Calculate current speed with boost if active
+            const effectiveSpeed = currentSpeed.current + (isBoostActive.current ? BOOST_AMOUNT : 0);
+            const forwardSpeed = effectiveSpeed * delta;
             tunnelPosition.current += forwardSpeed;
 
             // Update score
@@ -667,11 +738,19 @@ export function Game2D() {
                 setGameState('gameOver');
                 setIsFallingThroughGap(false);
             }
-        }
 
-        // Keep camera position fixed (but rotation changes)
-        camera.position.set(0, 0, 5);
-        camera.lookAt(0, 0, 0);
+            // Add camera shake during boost
+            if (isBoostActive.current) {
+                const shakeAmount = 0.02;
+                camera.position.x = Math.sin(Date.now() * 0.01) * shakeAmount;
+                camera.position.y = Math.cos(Date.now() * 0.01) * shakeAmount;
+            } else {
+                camera.position.x = 0;
+                camera.position.y = 0;
+            }
+            camera.position.z = 5;
+            camera.lookAt(0, 0, 0);
+        }
     });
 
     // Reset speed when game restarts
@@ -687,8 +766,16 @@ export function Game2D() {
 
     return (
         <>
-            {/* Space background */}
-            <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+            {/* Stars background with increased speed during boost */}
+            <Stars
+                radius={100}
+                depth={50}
+                count={5000}
+                factor={4}
+                saturation={0}
+                fade
+                speed={1 + (isBoostActive.current ? 2 : 0)}
+            />
 
             {/* Score display */}
             <Text
