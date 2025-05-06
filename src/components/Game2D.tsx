@@ -1,11 +1,12 @@
-import { useRef, useState, useMemo, useCallback } from 'react';
+import { useRef, useState, useMemo, useCallback, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Text, Stars } from '@react-three/drei';
 import { Vector3, Mesh, Group, DoubleSide, Euler, Matrix4 } from 'three';
 import { useGameControls, Surface, GameState } from '../hooks/useGameControls';
 
 // Game configuration
-const MOVE_SPEED = 6; // Speed the character runs forward
+const INITIAL_MOVE_SPEED = 4; // Initial speed the character runs forward
+const SPEED_INCREASE = 0.5; // Speed increase per color change
 const SIDE_SPEED = 8; // Speed of side movement
 const JUMP_FORCE = 10;
 const GRAVITY = 25;
@@ -15,10 +16,25 @@ const SEGMENT_LENGTH = 10; // Length of each tunnel segment (reduced to 10)
 const VISIBLE_SEGMENTS = 5; // Number of segments to keep visible
 const EXTENSION_THRESHOLD = 40; // When to add a new segment (distance from the end)
 const BALL_RADIUS = 0.25; // Character size
-const FLOOR_COLORS = ["#ff91c6", "#ff7fb8", "#ff69a9", "#ff7fb8", "#ff91c6"]; // Pink floor colors
-const CEILING_COLOR = "#ff4d94"; // Darker pink for ceiling
-const WALL_COLOR = "#ff8c42"; // Orange for walls
+const COLOR_CHANGE_INTERVAL = 6; // Number of segments before color changes
+const TILE_EMISSIVE_INTENSITY = 0.6; // Base emissive intensity
 const LANE_COUNT = 5; // Number of lanes
+
+// Color schemes
+const COLOR_SCHEMES = [
+    "#00ffff", // Cyan
+    "#ff00ff", // Magenta
+    "#00ff00", // Green
+    "#ff3366", // Pink
+    "#ffff00", // Yellow
+    "#ff6600", // Orange
+];
+
+// Get color based on segment index
+const getColorForSegment = (segmentIndex: number) => {
+    const colorIndex = Math.floor(segmentIndex / COLOR_CHANGE_INTERVAL) % COLOR_SCHEMES.length;
+    return COLOR_SCHEMES[colorIndex];
+};
 
 // Lane positions
 const getLanePosition = (lane: number, totalLanes: number = LANE_COUNT) => {
@@ -50,6 +66,9 @@ export function Game2D() {
     const [currentLane, setCurrentLane] = useState(2); // Start in middle lane (0-4)
     const [currentSurface, setCurrentSurface] = useState<Surface>('floor');
     const [isFallingThroughGap, setIsFallingThroughGap] = useState(false);
+    const isDebugMode = useRef(false);
+    const currentSpeed = useRef(INITIAL_MOVE_SPEED);
+    const lastColorIndex = useRef(0);
 
     // Track generated tunnel segments
     const [tunnelSegments, setTunnelSegments] = useState<TunnelSegment[]>([]);
@@ -111,6 +130,18 @@ export function Game2D() {
         getLanePosition,
     });
 
+    // Add debug mode key handler
+    useEffect(() => {
+        const handleKeyPress = (event: KeyboardEvent) => {
+            if (gameState === 'start' && event.key === '5') {
+                isDebugMode.current = true;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyPress);
+        return () => window.removeEventListener('keydown', handleKeyPress);
+    }, [gameState]);
+
     // Generate a tunnel segment starting at the given Z position
     const generateTunnelSegment = useCallback((startZ: number): TunnelSegment => {
         const tiles: Tile[] = [];
@@ -136,10 +167,10 @@ export function Game2D() {
 
             // Surface-specific difficulty modifiers (reduced to make fewer gaps)
             const difficultyModifiers = {
-                floor: 0.7, // Reduced from 1.0 for fewer gaps
-                ceiling: 0.5 + Math.sin(absoluteZ * 0.1 + surfaceSeeds.ceiling) * 0.15, // Varies between 0.35-0.65
-                leftWall: 0.45 + Math.cos(absoluteZ * 0.08 + surfaceSeeds.leftWall) * 0.15, // Varies between 0.3-0.6
-                rightWall: 0.55 + Math.sin(absoluteZ * 0.12 + surfaceSeeds.rightWall) * 0.1 // Varies between 0.45-0.65
+                floor: 0.7,
+                ceiling: 0.5 + Math.sin(absoluteZ * 0.1 + surfaceSeeds.ceiling) * 0.15,
+                leftWall: 0.45 + Math.cos(absoluteZ * 0.08 + surfaceSeeds.leftWall) * 0.15,
+                rightWall: 0.55 + Math.sin(absoluteZ * 0.12 + surfaceSeeds.rightWall) * 0.1
             };
 
             // Safe zone at the start
@@ -268,9 +299,9 @@ export function Game2D() {
                         -TUNNEL_SIZE / 2, // Bottom
                         -(z + startZ)
                     ] as [number, number, number],
-                    size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
+                    size: [TILE_SIZE * 0.95, TILE_SIZE * 0.95] as [number, number], // Slightly smaller tiles for gap effect
                     type: 'floor',
-                    color: floorTileExists ? FLOOR_COLORS[x] : 'black',
+                    color: getColorForSegment(segmentIndex),
                     exists: floorTileExists,
                     segmentIndex
                 });
@@ -283,9 +314,9 @@ export function Game2D() {
                         TUNNEL_SIZE / 2, // Top
                         -(z + startZ)
                     ] as [number, number, number],
-                    size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
+                    size: [TILE_SIZE * 0.95, TILE_SIZE * 0.95] as [number, number],
                     type: 'ceiling',
-                    color: ceilingTileExists ? CEILING_COLOR : 'black',
+                    color: getColorForSegment(segmentIndex),
                     exists: ceilingTileExists,
                     segmentIndex
                 });
@@ -301,9 +332,9 @@ export function Game2D() {
                         getLanePosition(y, totalLanes),
                         -(z + startZ)
                     ] as [number, number, number],
-                    size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
+                    size: [TILE_SIZE * 0.95, TILE_SIZE * 0.95] as [number, number],
                     type: 'leftWall',
-                    color: leftWallTileExists ? WALL_COLOR : 'black',
+                    color: getColorForSegment(segmentIndex),
                     exists: leftWallTileExists,
                     segmentIndex
                 });
@@ -316,9 +347,9 @@ export function Game2D() {
                         getLanePosition(y, totalLanes),
                         -(z + startZ)
                     ] as [number, number, number],
-                    size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
+                    size: [TILE_SIZE * 0.95, TILE_SIZE * 0.95] as [number, number],
                     type: 'rightWall',
-                    color: rightWallTileExists ? WALL_COLOR : 'black',
+                    color: getColorForSegment(segmentIndex),
                     exists: rightWallTileExists,
                     segmentIndex
                 });
@@ -344,9 +375,12 @@ export function Game2D() {
         setTunnelSegments(initialSegments);
     }, [generateTunnelSegment]);
 
-    // Check if player is on a valid tile of current surface
+    // Modify isPlayerOnTile to respect debug mode
     const isPlayerOnTile = () => {
         if (!playerRef.current) return false;
+
+        // If in debug mode, always return true
+        if (isDebugMode.current) return true;
 
         // If falling through a gap, keep falling
         if (isFallingThroughGap) return false;
@@ -426,8 +460,15 @@ export function Game2D() {
             const playerPos = playerRef.current.position;
             const gravityDir = getGravityDirection();
 
-            // Auto-move forward at consistent speed regardless of animation state
-            const forwardSpeed = MOVE_SPEED * delta;
+            // Check for color change and update speed
+            const currentColorIndex = Math.floor(tunnelPosition.current / (SEGMENT_LENGTH * COLOR_CHANGE_INTERVAL)) % COLOR_SCHEMES.length;
+            if (currentColorIndex !== lastColorIndex.current) {
+                currentSpeed.current += SPEED_INCREASE;
+                lastColorIndex.current = currentColorIndex;
+            }
+
+            // Auto-move forward at current speed
+            const forwardSpeed = currentSpeed.current * delta;
             tunnelPosition.current += forwardSpeed;
 
             // Update score
@@ -610,6 +651,14 @@ export function Game2D() {
         camera.lookAt(0, 0, 0);
     });
 
+    // Reset speed when game restarts
+    useEffect(() => {
+        if (gameState === 'start') {
+            currentSpeed.current = INITIAL_MOVE_SPEED;
+            lastColorIndex.current = 0;
+        }
+    }, [gameState]);
+
     // Flatten tunnel tiles for rendering
     const allTunnelTiles = tunnelSegments.flatMap(segment => segment.tiles);
 
@@ -698,7 +747,6 @@ export function Game2D() {
             {/* Tunnel */}
             <group ref={tunnelRef}>
                 {allTunnelTiles.map((tile, index) => {
-                    // Skip rendering missing tiles completely
                     if (!tile.exists) return null;
 
                     // Determine rotation based on tile type
@@ -708,17 +756,16 @@ export function Game2D() {
                     else if (tile.type === 'leftWall') rotation = [0, Math.PI / 2, 0];
                     else if (tile.type === 'rightWall') rotation = [0, -Math.PI / 2, 0];
 
-                    // Add depth-based color variation for gradient effect
-                    const depthFactor = Math.abs(tile.position[2]) / (SEGMENT_LENGTH * VISIBLE_SEGMENTS);
+                    // Calculate distance-based effects
+                    const distanceFromPlayer = Math.abs(tile.position[2] + tunnelPosition.current);
+                    const depthFactor = Math.min(distanceFromPlayer / (SEGMENT_LENGTH * VISIBLE_SEGMENTS), 1);
 
-                    // Add pulsing effect for walls
-                    let emissiveIntensity = 0.2 + depthFactor * 0.3;
-                    const useColor = tile.color;
+                    // Pulse effect based on position and time
+                    const pulseSpeed = 0.2;
+                    const pulseIntensity = Math.sin(tile.position[2] * pulseSpeed + Date.now() * 0.001) * 0.3 + 0.7;
 
-                    if (tile.type === 'leftWall' || tile.type === 'rightWall') {
-                        const pulseIntensity = Math.sin(tile.position[2] * 0.2) * 0.2 + 0.8;
-                        emissiveIntensity *= pulseIntensity;
-                    }
+                    // Combine all effects for final emissive intensity
+                    const finalEmissiveIntensity = TILE_EMISSIVE_INTENSITY * pulseIntensity * (1 - depthFactor * 0.5);
 
                     return (
                         <mesh
@@ -728,24 +775,41 @@ export function Game2D() {
                         >
                             <planeGeometry args={tile.size} />
                             <meshStandardMaterial
-                                color={useColor}
+                                color={tile.color}
                                 side={DoubleSide}
                                 emissive={tile.color}
-                                emissiveIntensity={emissiveIntensity}
-                                metalness={0.2}
-                                roughness={0.8 - depthFactor * 0.3}
+                                emissiveIntensity={finalEmissiveIntensity}
+                                metalness={0.8}
+                                roughness={0.2}
+                                transparent={true}
+                                opacity={0.9}
                             />
                         </mesh>
                     );
                 })}
             </group>
 
-            {/* Lighting */}
-            <ambientLight intensity={0.4} />
-            <pointLight position={[0, 0, 2]} intensity={0.8} color="#ffffff" />
-            <pointLight position={[0, -1.5, 0]} intensity={0.8} color="#ff6666" distance={3} />
-            <pointLight position={[2, 0, -10]} intensity={0.5} color="#0066ff" distance={15} />
-            <pointLight position={[-2, 0, -20]} intensity={0.5} color="#6600ff" distance={15} />
+            {/* Dynamic lighting that matches current segment color */}
+            <ambientLight intensity={0.2} />
+            <pointLight position={[0, 0, 2]} intensity={1.2} color="#ffffff" />
+            <pointLight
+                position={[0, -1.5, 0]}
+                intensity={1}
+                color={getColorForSegment(Math.floor(tunnelPosition.current / SEGMENT_LENGTH))}
+                distance={5}
+            />
+            <pointLight
+                position={[2, 0, -10]}
+                intensity={0.8}
+                color={getColorForSegment(Math.floor((tunnelPosition.current + 10) / SEGMENT_LENGTH))}
+                distance={15}
+            />
+            <pointLight
+                position={[-2, 0, -20]}
+                intensity={0.8}
+                color={getColorForSegment(Math.floor((tunnelPosition.current + 20) / SEGMENT_LENGTH))}
+                distance={15}
+            />
         </>
     );
 }
