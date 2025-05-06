@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState, useMemo, useCallback } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Text, Stars } from '@react-three/drei';
 import { Vector3, Mesh, Group, DoubleSide, Euler, Matrix4 } from 'three';
@@ -11,7 +11,9 @@ const JUMP_FORCE = 10;
 const GRAVITY = 25;
 const TUNNEL_SIZE = 5; // Size of tunnel
 const TILE_SIZE = 1; // Size of floor/wall tiles
-const TUNNEL_LENGTH = 150; // Longer tunnel
+const SEGMENT_LENGTH = 75; // Length of each tunnel segment
+const INITIAL_SEGMENTS = 2; // Initial number of segments to generate
+const EXTENSION_THRESHOLD = 100; // When to add a new segment (distance from the end)
 const BALL_RADIUS = 0.25; // Character size
 const FLOOR_COLORS = ["#ff91c6", "#ff7fb8", "#ff69a9", "#ff7fb8", "#ff91c6"]; // Pink floor colors
 const CEILING_COLOR = "#ff4d94"; // Darker pink for ceiling
@@ -31,6 +33,14 @@ type Tile = {
     type: Surface; // Type of surface
     color: string;
     exists: boolean; // Whether this tile exists or is a gap
+    segmentIndex: number; // Which segment this tile belongs to
+};
+
+// Define segment type
+type TunnelSegment = {
+    startZ: number;
+    endZ: number;
+    tiles: Tile[];
 };
 
 export function Game2D() {
@@ -40,6 +50,11 @@ export function Game2D() {
     const [currentLane, setCurrentLane] = useState(2); // Start in middle lane (0-4)
     const [currentSurface, setCurrentSurface] = useState<Surface>('floor');
     const [isFallingThroughGap, setIsFallingThroughGap] = useState(false);
+
+    // Track generated tunnel segments
+    const [tunnelSegments, setTunnelSegments] = useState<TunnelSegment[]>([]);
+    const nextSegmentZ = useRef(0);
+    const generatedSegmentsCount = useRef(0);
 
     // Player state
     const playerRef = useRef<Mesh>(null);
@@ -96,46 +111,49 @@ export function Game2D() {
         getLanePosition,
     });
 
-    // Generate tunnel tiles with explicit gaps
-    const generateTunnel = () => {
+    // Generate a tunnel segment starting at the given Z position
+    const generateTunnelSegment = useCallback((startZ: number): TunnelSegment => {
         const tiles: Tile[] = [];
         const totalLanes = 5;
-        const length = TUNNEL_LENGTH;
+        const length = SEGMENT_LENGTH;
+        const segmentIndex = generatedSegmentsCount.current;
 
         // Create unique difficulty seeds for each surface
         // These create offset patterns to avoid symmetry
         const surfaceSeeds = {
-            floor: Math.random() * 1000,
-            ceiling: Math.random() * 1000,
-            leftWall: Math.random() * 1000,
-            rightWall: Math.random() * 1000
+            floor: Math.random() * 1000 + segmentIndex * 37.5,
+            ceiling: Math.random() * 1000 + segmentIndex * 84.3,
+            leftWall: Math.random() * 1000 + segmentIndex * 129.7,
+            rightWall: Math.random() * 1000 + segmentIndex * 176.2
         };
 
-        // Generate tiles for the tunnel
+        // Generate tiles for the tunnel segment
         for (let z = 0; z < length; z++) {
+            const absoluteZ = startZ + z;
+
             // Base difficulty values for this segment
             let baseDifficulty = 0;
 
             // Surface-specific difficulty modifiers (reduced to make fewer gaps)
             const difficultyModifiers = {
                 floor: 0.7, // Reduced from 1.0 for fewer gaps
-                ceiling: 0.5 + Math.sin(z * 0.1 + surfaceSeeds.ceiling) * 0.15, // Varies between 0.35-0.65
-                leftWall: 0.45 + Math.cos(z * 0.08 + surfaceSeeds.leftWall) * 0.15, // Varies between 0.3-0.6
-                rightWall: 0.55 + Math.sin(z * 0.12 + surfaceSeeds.rightWall) * 0.1 // Varies between 0.45-0.65
+                ceiling: 0.5 + Math.sin(absoluteZ * 0.1 + surfaceSeeds.ceiling) * 0.15, // Varies between 0.35-0.65
+                leftWall: 0.45 + Math.cos(absoluteZ * 0.08 + surfaceSeeds.leftWall) * 0.15, // Varies between 0.3-0.6
+                rightWall: 0.55 + Math.sin(absoluteZ * 0.12 + surfaceSeeds.rightWall) * 0.1 // Varies between 0.45-0.65
             };
 
             // Safe zone at the start
-            if (z < 15) {
+            if (segmentIndex === 0 && z < 15) {
                 baseDifficulty = 0; // No gaps
             }
             // Intro phase - very few gaps
-            else if (z < 40) {
+            else if (segmentIndex === 0 && z < 40) {
                 baseDifficulty = 0.15; // Reduced from 0.2
             }
             // Medium sections with varying difficulty
             else {
                 // Create wave patterns of difficulty that cycle
-                const cyclePosition = z % 50; // Difficulty cycles every 50 units
+                const cyclePosition = absoluteZ % 50; // Difficulty cycles every 50 units
 
                 if (cyclePosition < 15) {
                     // Easier section at beginning of cycle
@@ -149,10 +167,14 @@ export function Game2D() {
                 }
 
                 // Random difficulty spikes (less frequent and intense)
-                if (z > 80 && Math.random() < 0.03) { // Reduced from 0.05
+                if (absoluteZ > 80 && Math.random() < 0.03) { // Reduced from 0.05
                     // Spike difficulty but less than before
                     baseDifficulty = 0.5; // Reduced from 0.7
                 }
+
+                // Gradually increase difficulty with distance
+                baseDifficulty += segmentIndex * 0.03;
+                baseDifficulty = Math.min(baseDifficulty, 0.7); // Cap difficulty
             }
 
             // Calculate surface-specific difficulties
@@ -166,7 +188,7 @@ export function Game2D() {
             // Helper function to determine if tile should exist based on position and difficulty
             const shouldTileExist = (surface: Surface, x: number, z: number) => {
                 // Safe zone at the start
-                if (z < 15) return true;
+                if (segmentIndex === 0 && z < 15) return true;
 
                 // Get the appropriate difficulty for this surface
                 const difficulty = surfaceDifficulty[surface];
@@ -175,7 +197,7 @@ export function Game2D() {
                 const offset = surfaceSeeds[surface] % 10;
 
                 // Pattern-based gaps - but with higher chance of tiles existing
-                if (z % 5 === 0) {
+                if (absoluteZ % 5 === 0) {
                     // Every 5th row has alternating tiles but with more tiles intact
                     // Original: return (x + Math.floor(offset)) % 2 !== 0;
                     // For floor, keep original pattern
@@ -185,7 +207,7 @@ export function Game2D() {
                     // For other surfaces, allow more tiles to exist
                     return (x + Math.floor(offset)) % 3 !== 0; // Only 1/3 of tiles are gaps
                 }
-                else if (z % 15 === 0) {
+                else if (absoluteZ % 15 === 0) {
                     // Every 15th row has special patterns with more forgiving gaps
                     if (surface === 'floor') return x === 2 || x === 1 || x === 3; // Three lanes
                     if (surface === 'ceiling') return x === 1 || x === 3 || x === 0; // Three lanes
@@ -194,20 +216,20 @@ export function Game2D() {
                 }
 
                 // Special challenge patterns - with increased survival rate
-                if (z % 40 === 0 && z > 50) {
+                if (absoluteZ % 40 === 0 && absoluteZ > 50) {
                     // More forgiving patterns
                     if (surface === 'floor') {
                         // Floor: modified zigzag with more tiles
-                        return (x + Math.floor(z / 10)) % 3 !== 1; // 2/3 of tiles exist
+                        return (x + Math.floor(absoluteZ / 10)) % 3 !== 1; // 2/3 of tiles exist
                     } else if (surface === 'ceiling') {
                         // Ceiling: modified checker with more tiles
-                        return (x + Math.floor(z / 10) + 1) % 3 !== 0; // 2/3 of tiles exist
+                        return (x + Math.floor(absoluteZ / 10) + 1) % 3 !== 0; // 2/3 of tiles exist
                     } else {
                         // Walls: more forgiving alternating pattern
-                        return (x + Math.floor(offset + z / 5)) % 3 !== 2; // 2/3 of tiles exist
+                        return (x + Math.floor(offset + absoluteZ / 5)) % 3 !== 2; // 2/3 of tiles exist
                     }
                 }
-                else if (z % 75 === 0 && z > 75) {
+                else if (absoluteZ % 75 === 0 && absoluteZ > 75) {
                     // More forgiving edge patterns
                     if (surface === 'floor') return x === 0 || x === 4 || x === 2; // Add middle lane
                     if (surface === 'ceiling') return x === 2 || x === 1; // Two lanes
@@ -216,7 +238,7 @@ export function Game2D() {
                 }
 
                 // Apply noise to create more natural patterns, but with increased chance of tiles existing
-                const noiseValue = Math.sin(x * 0.5 + z * 0.3 + surfaceSeeds[surface]) * 0.3 + 0.7; // Adjusted from *0.5+0.5 to *0.3+0.7
+                const noiseValue = Math.sin(x * 0.5 + absoluteZ * 0.3 + surfaceSeeds[surface]) * 0.3 + 0.7; // Adjusted from *0.5+0.5 to *0.3+0.7
 
                 // Random gaps based on difficulty plus noise, with increased threshold for gaps
                 return Math.random() * noiseValue >= difficulty * 0.8; // Reduced actual difficulty by 20%
@@ -230,7 +252,7 @@ export function Game2D() {
                 // Ensure there's always at least one safe path on the floor
                 const existingGapsInRow = tiles.filter(t =>
                     t.type === 'floor' &&
-                    t.position[2] === -z &&
+                    t.position[2] === -z - startZ &&
                     !t.exists
                 ).length;
 
@@ -244,12 +266,13 @@ export function Game2D() {
                     position: [
                         getLanePosition(x, totalLanes),
                         -TUNNEL_SIZE / 2, // Bottom
-                        -z
+                        -(z + startZ)
                     ] as [number, number, number],
                     size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
                     type: 'floor',
                     color: floorTileExists ? FLOOR_COLORS[x] : 'black',
-                    exists: floorTileExists
+                    exists: floorTileExists,
+                    segmentIndex
                 });
 
                 // Ceiling tile (with possible gaps)
@@ -258,12 +281,13 @@ export function Game2D() {
                     position: [
                         getLanePosition(x, totalLanes),
                         TUNNEL_SIZE / 2, // Top
-                        -z
+                        -(z + startZ)
                     ] as [number, number, number],
                     size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
                     type: 'ceiling',
                     color: ceilingTileExists ? CEILING_COLOR : 'black',
-                    exists: ceilingTileExists
+                    exists: ceilingTileExists,
+                    segmentIndex
                 });
             }
 
@@ -275,12 +299,13 @@ export function Game2D() {
                     position: [
                         -TUNNEL_SIZE / 2, // Left side
                         getLanePosition(y, totalLanes),
-                        -z
+                        -(z + startZ)
                     ] as [number, number, number],
                     size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
                     type: 'leftWall',
                     color: leftWallTileExists ? WALL_COLOR : 'black',
-                    exists: leftWallTileExists
+                    exists: leftWallTileExists,
+                    segmentIndex
                 });
 
                 // Right wall
@@ -289,23 +314,35 @@ export function Game2D() {
                     position: [
                         TUNNEL_SIZE / 2, // Right side
                         getLanePosition(y, totalLanes),
-                        -z
+                        -(z + startZ)
                     ] as [number, number, number],
                     size: [TILE_SIZE * 0.9, TILE_SIZE * 0.9] as [number, number],
                     type: 'rightWall',
                     color: rightWallTileExists ? WALL_COLOR : 'black',
-                    exists: rightWallTileExists
+                    exists: rightWallTileExists,
+                    segmentIndex
                 });
             }
         }
 
-        return tiles;
-    };
-
-    // Create tunnel segments
-    const tunnelTiles = useMemo(() => {
-        return generateTunnel();
+        generatedSegmentsCount.current++;
+        return {
+            startZ,
+            endZ: startZ + length,
+            tiles
+        };
     }, []);
+
+    // Initialize tunnel segments on first render
+    useMemo(() => {
+        const initialSegments: TunnelSegment[] = [];
+        for (let i = 0; i < INITIAL_SEGMENTS; i++) {
+            const segment = generateTunnelSegment(i * SEGMENT_LENGTH);
+            initialSegments.push(segment);
+            nextSegmentZ.current = (i + 1) * SEGMENT_LENGTH;
+        }
+        setTunnelSegments(initialSegments);
+    }, [generateTunnelSegment]);
 
     // Check if player is on a valid tile of current surface
     const isPlayerOnTile = () => {
@@ -320,34 +357,35 @@ export function Game2D() {
         // Find appropriate tile based on current surface
         let tile;
 
+        // Get all tiles from all segments, filtered by surface
+        const allTilesOfCurrentSurface = tunnelSegments.flatMap(segment =>
+            segment.tiles.filter(t => t.type === currentSurface)
+        );
+
         switch (currentSurface) {
             case 'floor':
-                tile = tunnelTiles.find(t =>
-                    t.type === 'floor' &&
+                tile = allTilesOfCurrentSurface.find(t =>
                     Math.abs(t.position[0] - playerPos.x) < TILE_SIZE / 2 &&
                     Math.abs(t.position[2] + posZ - playerPos.z) < TILE_SIZE / 2
                 );
                 break;
 
             case 'ceiling':
-                tile = tunnelTiles.find(t =>
-                    t.type === 'ceiling' &&
+                tile = allTilesOfCurrentSurface.find(t =>
                     Math.abs(t.position[0] - playerPos.x) < TILE_SIZE / 2 &&
                     Math.abs(t.position[2] + posZ - playerPos.z) < TILE_SIZE / 2
                 );
                 break;
 
             case 'leftWall':
-                tile = tunnelTiles.find(t =>
-                    t.type === 'leftWall' &&
+                tile = allTilesOfCurrentSurface.find(t =>
                     Math.abs(t.position[1] - playerPos.y) < TILE_SIZE / 2 &&
                     Math.abs(t.position[2] + posZ - playerPos.z) < TILE_SIZE / 2
                 );
                 break;
 
             case 'rightWall':
-                tile = tunnelTiles.find(t =>
-                    t.type === 'rightWall' &&
+                tile = allTilesOfCurrentSurface.find(t =>
                     Math.abs(t.position[1] - playerPos.y) < TILE_SIZE / 2 &&
                     Math.abs(t.position[2] + posZ - playerPos.z) < TILE_SIZE / 2
                 );
@@ -356,6 +394,21 @@ export function Game2D() {
 
         // Return true if there's a tile and it exists (not a gap)
         return tile !== undefined && tile.exists;
+    };
+
+    // Check if we need to add a new segment
+    const checkAndAddSegment = () => {
+        const playerZ = tunnelPosition.current;
+        const lastSegment = tunnelSegments[tunnelSegments.length - 1];
+
+        // If player is approaching the end of the last segment
+        if (lastSegment && playerZ > lastSegment.endZ - EXTENSION_THRESHOLD) {
+            // Generate and add a new segment
+            const newSegment = generateTunnelSegment(nextSegmentZ.current);
+            nextSegmentZ.current += SEGMENT_LENGTH;
+
+            setTunnelSegments(prevSegments => [...prevSegments, newSegment]);
+        }
     };
 
     // Main game loop
@@ -372,6 +425,9 @@ export function Game2D() {
 
             // Update score
             setScore(Math.floor(tunnelPosition.current));
+
+            // Check if we need to add a new segment
+            checkAndAddSegment();
 
             // Move player through tunnel
             if (tunnelRef.current) {
@@ -547,6 +603,9 @@ export function Game2D() {
         camera.lookAt(0, 0, 0);
     });
 
+    // Flatten tunnel tiles for rendering
+    const allTunnelTiles = tunnelSegments.flatMap(segment => segment.tiles);
+
     return (
         <>
             {/* Space background */}
@@ -631,7 +690,7 @@ export function Game2D() {
 
             {/* Tunnel */}
             <group ref={tunnelRef}>
-                {tunnelTiles.map((tile, index) => {
+                {allTunnelTiles.map((tile, index) => {
                     // Skip rendering missing tiles completely
                     if (!tile.exists) return null;
 
@@ -641,8 +700,9 @@ export function Game2D() {
                     else if (tile.type === 'ceiling') rotation = [-Math.PI / 2, 0, 0];
                     else if (tile.type === 'leftWall') rotation = [0, Math.PI / 2, 0];
                     else if (tile.type === 'rightWall') rotation = [0, -Math.PI / 2, 0];
+
                     // Add depth-based color variation for gradient effect
-                    const depthFactor = Math.abs(tile.position[2]) / TUNNEL_LENGTH;
+                    const depthFactor = Math.abs(tile.position[2]) / (SEGMENT_LENGTH * INITIAL_SEGMENTS);
 
                     // Add pulsing effect for walls
                     let emissiveIntensity = 0.2 + depthFactor * 0.3;
