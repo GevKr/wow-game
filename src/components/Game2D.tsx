@@ -22,6 +22,9 @@ const BALL_RADIUS = 0.25; // Character size
 const COLOR_CHANGE_INTERVAL = 4; // Number of segments before color changes
 const TILE_EMISSIVE_INTENSITY = 1.2; // Increased base emissive intensity for brighter glow
 const LANE_COUNT = 5; // Number of lanes
+const KEY_NOTE_CHANCE = 0.05; // Reduced chance of a key note appearing (from 0.15)
+const INVINCIBILITY_DURATION = 3000; // Duration of invincibility in milliseconds
+const KEY_NOTE_ROTATION_SPEED = 3; // Increased rotation speed for more sparkle
 
 // Color schemes - bright transition from blue to red
 const COLOR_SCHEMES = [
@@ -85,6 +88,13 @@ type TunnelSegment = {
     tiles: Tile[];
 };
 
+// Key note type
+type KeyNote = {
+    position: [number, number, number];
+    collected: boolean;
+    segmentIndex: number;
+};
+
 export function Game2D() {
     const { camera } = useThree();
     const [score, setScore] = useState(0);
@@ -123,6 +133,10 @@ export function Game2D() {
 
     // Add motion blur strength state
     const [blurStrength, setBlurStrength] = useState(0);
+    const [keyNotes, setKeyNotes] = useState<KeyNote[]>([]);
+    const [isInvincible, setIsInvincible] = useState(false);
+    const [collectionEffect, setCollectionEffect] = useState<{ position: [number, number, number], time: number } | null>(null);
+    const invincibilityTimer = useRef<NodeJS.Timeout | null>(null);
 
     // Update blur effect when boost state changes
     useEffect(() => {
@@ -238,6 +252,7 @@ export function Game2D() {
     // Generate a tunnel segment starting at the given Z position
     const generateTunnelSegment = useCallback((startZ: number): TunnelSegment => {
         const tiles: Tile[] = [];
+        const newKeyNotes: KeyNote[] = [];
         const totalLanes = 5;
         const length = SEGMENT_LENGTH;
         const segmentIndex = generatedSegmentsCount.current;
@@ -254,6 +269,43 @@ export function Game2D() {
         // Generate tiles for the tunnel segment
         for (let z = 0; z < length; z++) {
             const absoluteZ = startZ + z;
+
+            // Generate key notes with some probability
+            if (Math.random() < KEY_NOTE_CHANCE && segmentIndex > 0) {
+                const lane = Math.floor(Math.random() * totalLanes);
+                const surface = Math.random() < 0.7 ? 'floor' :
+                    Math.random() < 0.5 ? 'leftWall' : 'rightWall';
+
+                let notePosition: [number, number, number];
+                switch (surface) {
+                    case 'floor':
+                        notePosition = [
+                            getLanePosition(lane, totalLanes),
+                            -TUNNEL_SIZE / 2 + 0.5, // Lowered to be closer to floor
+                            -(z + startZ)
+                        ];
+                        break;
+                    case 'leftWall':
+                        notePosition = [
+                            -TUNNEL_SIZE / 2 + 0.5, // Closer to left wall
+                            getLanePosition(lane, totalLanes),
+                            -(z + startZ)
+                        ];
+                        break;
+                    default: // rightWall
+                        notePosition = [
+                            TUNNEL_SIZE / 2 - 0.5, // Closer to right wall
+                            getLanePosition(lane, totalLanes),
+                            -(z + startZ)
+                        ];
+                }
+
+                newKeyNotes.push({
+                    position: notePosition,
+                    collected: false,
+                    segmentIndex
+                });
+            }
 
             // Base difficulty values for this segment
             let baseDifficulty = 0;
@@ -449,6 +501,9 @@ export function Game2D() {
             }
         }
 
+        // Add the new key notes to the state
+        setKeyNotes(prev => [...prev, ...newKeyNotes]);
+
         generatedSegmentsCount.current++;
         return {
             startZ,
@@ -468,12 +523,12 @@ export function Game2D() {
         setTunnelSegments(initialSegments);
     }, [generateTunnelSegment]);
 
-    // Modify isPlayerOnTile to respect debug mode
+    // Modify isPlayerOnTile to respect debug mode and invincibility
     const isPlayerOnTile = () => {
         if (!playerRef.current) return false;
 
-        // If in debug mode, always return true
-        if (isDebugMode.current) return true;
+        // If in debug mode or invincible, always return true
+        if (isDebugMode.current || isInvincible) return true;
 
         // If falling through a gap, keep falling
         if (isFallingThroughGap) return false;
@@ -552,6 +607,61 @@ export function Game2D() {
         if (gameState === 'playing' && playerRef.current) {
             const playerPos = playerRef.current.position;
             const gravityDir = getGravityDirection();
+
+            // Check for key note collection
+            setKeyNotes(prev => {
+                let collected = false;
+                let collectedPosition: [number, number, number] | null = null;
+
+                const updatedNotes = prev.filter(note => {
+                    if (note.collected) return false;
+
+                    // Calculate world space position of the note
+                    const noteWorldZ = note.position[2] + tunnelPosition.current;
+                    const dx = note.position[0] - playerPos.x;
+                    const dy = note.position[1] - playerPos.y;
+                    const dz = noteWorldZ - playerPos.z;
+                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+                    if (distance < BALL_RADIUS * 4) { // Increased collection radius
+                        collected = true;
+                        collectedPosition = note.position;
+                        return false;
+                    }
+                    return true;
+                });
+
+                if (collected && collectedPosition) {
+                    // Show collection effect
+                    setCollectionEffect({
+                        position: collectedPosition,
+                        time: performance.now()
+                    });
+
+                    // Clear effect after animation
+                    setTimeout(() => {
+                        setCollectionEffect(null);
+                    }, 1000);
+
+                    // Clear any existing invincibility timer
+                    if (invincibilityTimer.current) {
+                        clearTimeout(invincibilityTimer.current);
+                    }
+
+                    // Activate invincibility
+                    setIsInvincible(true);
+                    console.log("Invincibility activated!");
+
+                    // Set timer to disable invincibility
+                    invincibilityTimer.current = setTimeout(() => {
+                        setIsInvincible(false);
+                        invincibilityTimer.current = null;
+                        console.log("Invincibility deactivated!");
+                    }, INVINCIBILITY_DURATION);
+                }
+
+                return updatedNotes;
+            });
 
             // Check for color change and update speed
             const currentColorIndex = Math.floor(tunnelPosition.current / (SEGMENT_LENGTH * COLOR_CHANGE_INTERVAL)) % COLOR_SCHEMES.length;
@@ -758,7 +868,20 @@ export function Game2D() {
         if (gameState === 'start') {
             currentSpeed.current = INITIAL_MOVE_SPEED;
             lastColorIndex.current = 0;
+            setIsInvincible(false);
+            if (invincibilityTimer.current) {
+                clearTimeout(invincibilityTimer.current);
+                invincibilityTimer.current = null;
+            }
         }
+
+        // Cleanup function
+        return () => {
+            if (invincibilityTimer.current) {
+                clearTimeout(invincibilityTimer.current);
+                invincibilityTimer.current = null;
+            }
+        };
     }, [gameState]);
 
     // Flatten tunnel tiles for rendering
@@ -787,6 +910,207 @@ export function Game2D() {
             >
                 {`Score: ${score}`}
             </Text>
+
+            {/* Invincibility indicator */}
+            {isInvincible && (
+                <group>
+                    <mesh position={[0, 0, 0]}>
+                        <sphereGeometry args={[BALL_RADIUS * 1.5, 32, 32]} />
+                        <meshStandardMaterial
+                            color="#ffffff"
+                            transparent={true}
+                            opacity={0.3}
+                            emissive="#ffffff"
+                            emissiveIntensity={0.5}
+                        />
+                    </mesh>
+                    <pointLight
+                        position={[0, 0, 0]}
+                        intensity={1}
+                        color="#ffffff"
+                        distance={3}
+                    />
+                </group>
+            )}
+
+            {/* Tunnel */}
+            <group ref={tunnelRef}>
+                {allTunnelTiles.map((tile, index) => {
+                    if (!tile.exists) return null;
+
+                    // Determine rotation based on tile type
+                    let rotation = [0, 0, 0];
+                    if (tile.type === 'floor') rotation = [Math.PI / 2, 0, 0];
+                    else if (tile.type === 'ceiling') rotation = [-Math.PI / 2, 0, 0];
+                    else if (tile.type === 'leftWall') rotation = [0, Math.PI / 2, 0];
+                    else if (tile.type === 'rightWall') rotation = [0, -Math.PI / 2, 0];
+
+                    // Calculate distance-based effects
+                    const distanceFromPlayer = Math.abs(tile.position[2] + tunnelPosition.current);
+                    const depthFactor = Math.min(distanceFromPlayer / (SEGMENT_LENGTH * VISIBLE_SEGMENTS), 1);
+
+                    // Pulse effect based on position and time
+                    const pulseSpeed = 0.2;
+                    const pulseIntensity = Math.sin(tile.position[2] * pulseSpeed + Date.now() * 0.001) * 0.3 + 0.7;
+
+                    // Combine all effects for final emissive intensity
+                    const finalEmissiveIntensity = TILE_EMISSIVE_INTENSITY * pulseIntensity * (1 - depthFactor * 0.5);
+
+                    return (
+                        <mesh
+                            key={`tile-${tile.type}-${index}`}
+                            position={tile.position}
+                            rotation={rotation as [number, number, number]}
+                        >
+                            <planeGeometry args={tile.size} />
+                            <meshStandardMaterial
+                                color={tile.color}
+                                side={DoubleSide}
+                                emissive={tile.color}
+                                emissiveIntensity={finalEmissiveIntensity}
+                                metalness={0.8}
+                                roughness={0.2}
+                                transparent={true}
+                                opacity={0.9}
+                            />
+                        </mesh>
+                    );
+                })}
+
+                {/* Key notes */}
+                {keyNotes.map((note, index) => !note.collected && (
+                    <group
+                        key={`keynote-${index}`}
+                        position={note.position}
+                        rotation={[0, performance.now() * 0.001 * KEY_NOTE_ROTATION_SPEED, 0]}
+                    >
+                        {/* Star shape using multiple planes */}
+                        {[0, 0.785, 1.57].map((rotation, i) => (
+                            <mesh key={i} rotation={[0, 0, rotation]}>
+                                <planeGeometry args={[0.4, 0.08]} />
+                                <meshStandardMaterial
+                                    color="#ffffff"
+                                    emissive="#ffffff"
+                                    emissiveIntensity={1.5}
+                                    metalness={0.9}
+                                    roughness={0.1}
+                                    transparent
+                                    opacity={0.9}
+                                />
+                            </mesh>
+                        ))}
+                        {/* Center glow */}
+                        <mesh>
+                            <sphereGeometry args={[0.1, 16, 16]} />
+                            <meshStandardMaterial
+                                color="#ffffff"
+                                emissive="#ffffff"
+                                emissiveIntensity={2}
+                                metalness={0.9}
+                                roughness={0.1}
+                                transparent
+                                opacity={0.8}
+                            />
+                        </mesh>
+                        {/* Sparkle effect */}
+                        <pointLight
+                            intensity={1.2}
+                            color="#ffffff"
+                            distance={3}
+                        />
+                        {/* Pulsing outer glow */}
+                        <mesh scale={[1 + Math.sin(performance.now() * 0.005) * 0.2, 1 + Math.sin(performance.now() * 0.005) * 0.2, 1]}>
+                            <sphereGeometry args={[0.2, 16, 16]} />
+                            <meshStandardMaterial
+                                color="#ffffff"
+                                emissive="#ffffff"
+                                emissiveIntensity={1}
+                                transparent
+                                opacity={0.2}
+                            />
+                        </mesh>
+                    </group>
+                ))}
+
+                {/* Collection effect */}
+                {collectionEffect && (
+                    <group position={collectionEffect.position}>
+                        {/* Expanding ring effect */}
+                        {[1, 2, 3].map((ring) => {
+                            const scale = 1 + ((performance.now() - collectionEffect.time) / 500) * ring;
+                            const opacity = Math.max(0, 1 - ((performance.now() - collectionEffect.time) / 1000));
+
+                            return (
+                                <mesh key={ring} scale={[scale, scale, scale]}>
+                                    <ringGeometry args={[0.2, 0.3, 32]} />
+                                    <meshBasicMaterial
+                                        color="#ffffff"
+                                        transparent
+                                        opacity={opacity}
+                                        side={DoubleSide}
+                                    />
+                                </mesh>
+                            );
+                        })}
+
+                        {/* Burst particles */}
+                        {Array.from({ length: 8 }).map((_, i) => {
+                            const angle = (i / 8) * Math.PI * 2;
+                            const progress = (performance.now() - collectionEffect.time) / 1000;
+                            const radius = progress * 2;
+                            const opacity = Math.max(0, 1 - progress);
+
+                            return (
+                                <mesh
+                                    key={i}
+                                    position={[
+                                        Math.cos(angle) * radius,
+                                        Math.sin(angle) * radius,
+                                        0
+                                    ]}
+                                    scale={[0.1, 0.1, 0.1]}
+                                >
+                                    <sphereGeometry />
+                                    <meshBasicMaterial
+                                        color="#ffffff"
+                                        transparent
+                                        opacity={opacity}
+                                    />
+                                </mesh>
+                            );
+                        })}
+
+                        {/* Bright flash */}
+                        <pointLight
+                            intensity={Math.max(0, 2 - ((performance.now() - collectionEffect.time) / 500))}
+                            distance={3}
+                            color="#ffffff"
+                        />
+                    </group>
+                )}
+            </group>
+
+            {/* Dynamic lighting that matches current segment color */}
+            <ambientLight intensity={0.3} />
+            <pointLight position={[0, 0, 2]} intensity={1.5} color="#ffffff" />
+            <pointLight
+                position={[0, -1.5, 0]}
+                intensity={1.2}
+                color={getColorForSegment(Math.floor(tunnelPosition.current / SEGMENT_LENGTH))}
+                distance={5}
+            />
+            <pointLight
+                position={[2, 0, -10]}
+                intensity={1}
+                color={getColorForSegment(Math.floor((tunnelPosition.current + 10) / SEGMENT_LENGTH))}
+                distance={15}
+            />
+            <pointLight
+                position={[-2, 0, -20]}
+                intensity={1}
+                color={getColorForSegment(Math.floor((tunnelPosition.current + 20) / SEGMENT_LENGTH))}
+                distance={15}
+            />
 
             {/* Start screen */}
             {gameState === 'start' && (
@@ -853,73 +1177,6 @@ export function Game2D() {
                 <sphereGeometry args={[BALL_RADIUS, 32, 32]} />
                 <meshStandardMaterial color="#ff3030" emissive="#ff0000" emissiveIntensity={0.3} />
             </mesh>
-
-            {/* Tunnel */}
-            <group ref={tunnelRef}>
-                {allTunnelTiles.map((tile, index) => {
-                    if (!tile.exists) return null;
-
-                    // Determine rotation based on tile type
-                    let rotation = [0, 0, 0];
-                    if (tile.type === 'floor') rotation = [Math.PI / 2, 0, 0];
-                    else if (tile.type === 'ceiling') rotation = [-Math.PI / 2, 0, 0];
-                    else if (tile.type === 'leftWall') rotation = [0, Math.PI / 2, 0];
-                    else if (tile.type === 'rightWall') rotation = [0, -Math.PI / 2, 0];
-
-                    // Calculate distance-based effects
-                    const distanceFromPlayer = Math.abs(tile.position[2] + tunnelPosition.current);
-                    const depthFactor = Math.min(distanceFromPlayer / (SEGMENT_LENGTH * VISIBLE_SEGMENTS), 1);
-
-                    // Pulse effect based on position and time
-                    const pulseSpeed = 0.2;
-                    const pulseIntensity = Math.sin(tile.position[2] * pulseSpeed + Date.now() * 0.001) * 0.3 + 0.7;
-
-                    // Combine all effects for final emissive intensity
-                    const finalEmissiveIntensity = TILE_EMISSIVE_INTENSITY * pulseIntensity * (1 - depthFactor * 0.5);
-
-                    return (
-                        <mesh
-                            key={`tile-${tile.type}-${index}`}
-                            position={tile.position}
-                            rotation={rotation as [number, number, number]}
-                        >
-                            <planeGeometry args={tile.size} />
-                            <meshStandardMaterial
-                                color={tile.color}
-                                side={DoubleSide}
-                                emissive={tile.color}
-                                emissiveIntensity={finalEmissiveIntensity}
-                                metalness={0.8}
-                                roughness={0.2}
-                                transparent={true}
-                                opacity={0.9}
-                            />
-                        </mesh>
-                    );
-                })}
-            </group>
-
-            {/* Dynamic lighting that matches current segment color */}
-            <ambientLight intensity={0.3} />
-            <pointLight position={[0, 0, 2]} intensity={1.5} color="#ffffff" />
-            <pointLight
-                position={[0, -1.5, 0]}
-                intensity={1.2}
-                color={getColorForSegment(Math.floor(tunnelPosition.current / SEGMENT_LENGTH))}
-                distance={5}
-            />
-            <pointLight
-                position={[2, 0, -10]}
-                intensity={1}
-                color={getColorForSegment(Math.floor((tunnelPosition.current + 10) / SEGMENT_LENGTH))}
-                distance={15}
-            />
-            <pointLight
-                position={[-2, 0, -20]}
-                intensity={1}
-                color={getColorForSegment(Math.floor((tunnelPosition.current + 20) / SEGMENT_LENGTH))}
-                distance={15}
-            />
         </>
     );
 }
