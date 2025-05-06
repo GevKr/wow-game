@@ -36,6 +36,7 @@ type UseGameControlsProps = {
     gameState: GameState;
     setGameState: (state: GameState) => void;
     setIsFallingThroughGap: (falling: boolean) => void;
+    isFallingThroughGap: boolean;
     setScore: (score: number) => void;
 
     // Constants
@@ -72,6 +73,7 @@ export function useGameControls({
     gameState,
     setGameState,
     setIsFallingThroughGap,
+    isFallingThroughGap,
     setScore,
 
     // Constants
@@ -194,30 +196,8 @@ export function useGameControls({
         isJumping.current = false;
     };
 
-    // Reset unused velocity components to prevent sliding on certain surfaces
-    const resetUnusedVelocityComponents = () => {
-        if (!playerRef.current) return;
-
-        switch (currentSurface) {
-            case 'floor':
-            case 'ceiling':
-                // On horizontal surfaces, reset X velocity component
-                // Y is handled by gravity and jumping
-                playerVelocity.current.x = 0;
-                break;
-            case 'leftWall':
-            case 'rightWall':
-                // On vertical surfaces, reset Y velocity component
-                // X is handled by gravity and jumping
-                playerVelocity.current.y = 0;
-                break;
-        }
-
-        console.log("Reset velocity for surface:", currentSurface, playerVelocity.current);
-    };
-
-    // Update lane target position without snapping player to surface
-    const updateLaneTargetPosition = (surface: Surface, localLane: number) => {
+    // Set initial target position based on surface and lane (for animation)
+    const setTargetPositionForLane = (surface: Surface, localLane: number) => {
         const position = getLanePosition(localLane, LANES_PER_SURFACE);
 
         switch (surface) {
@@ -227,48 +207,6 @@ export function useGameControls({
                 break;
             case 'leftWall':
             case 'rightWall':
-                targetY.current = position;
-                break;
-        }
-    };
-
-    // Set player position based on surface and lane
-    const positionPlayerAtLane = (surface: Surface, localLane: number) => {
-        if (!playerRef.current) return;
-
-        const position = getLanePosition(localLane, LANES_PER_SURFACE);
-
-        switch (surface) {
-            case 'floor':
-                playerRef.current.position.set(
-                    position,
-                    -TUNNEL_SIZE / 2 + BALL_RADIUS,
-                    playerRef.current.position.z
-                );
-                targetX.current = position;
-                break;
-            case 'ceiling':
-                playerRef.current.position.set(
-                    position,
-                    TUNNEL_SIZE / 2 - BALL_RADIUS,
-                    playerRef.current.position.z
-                );
-                targetX.current = position;
-                break;
-            case 'leftWall':
-                playerRef.current.position.set(
-                    -TUNNEL_SIZE / 2 + BALL_RADIUS,
-                    position,
-                    playerRef.current.position.z
-                );
-                targetY.current = position;
-                break;
-            case 'rightWall':
-                playerRef.current.position.set(
-                    TUNNEL_SIZE / 2 - BALL_RADIUS,
-                    position,
-                    playerRef.current.position.z
-                );
                 targetY.current = position;
                 break;
         }
@@ -294,9 +232,15 @@ export function useGameControls({
         console.log(`Rotating camera ${direction}, from ${currentRotation} to ${newRotation}`);
     };
 
-    // Move player to a specific global lane
+    // Move player to a specific global lane (animated)
     const moveToGlobalLane = (globalLane: number, direction: 'left' | 'right') => {
         if (!playerRef.current) return;
+
+        // Don't allow movement if the player is falling through a gap
+        if (isFallingThroughGap) {
+            console.log("Cannot move while falling through a gap");
+            return;
+        }
 
         // Get surface and local lane from global lane
         const { surface, localLane } = getSurfaceAndLocalLane(globalLane);
@@ -320,32 +264,34 @@ export function useGameControls({
             // Rotate camera based on movement direction
             rotateCameraRelative(direction);
 
-            // Reset movement state
+            // Position player at new surface (but not lane position - will be animated)
+            switch (surface) {
+                case 'floor':
+                    playerRef.current.position.y = -TUNNEL_SIZE / 2 + BALL_RADIUS;
+                    break;
+                case 'ceiling':
+                    playerRef.current.position.y = TUNNEL_SIZE / 2 - BALL_RADIUS;
+                    break;
+                case 'leftWall':
+                    playerRef.current.position.x = -TUNNEL_SIZE / 2 + BALL_RADIUS;
+                    break;
+                case 'rightWall':
+                    playerRef.current.position.x = TUNNEL_SIZE / 2 - BALL_RADIUS;
+                    break;
+            }
+
+            // Set target position for the new lane (will be animated to)
+            setTargetPositionForLane(surface, localLane);
+
+            // Reset player velocity and jumping state
             playerVelocity.current.set(0, 0, 0);
             isJumping.current = false;
-
-            // Position player at new surface and lane
-            positionPlayerAtLane(surface, localLane);
-
-            // Reset unused velocity components to prevent sliding
-            resetUnusedVelocityComponents();
         } else {
-            // Same surface, just changing lanes
-
-            // Update lane
+            // Same surface, just changing lanes - set up animation
             setCurrentLane(localLane);
 
-            if (isJumping.current) {
-                // If jumping, only update target position without changing player position
-                console.log("Moving while jumping. Updating target only.");
-                updateLaneTargetPosition(surface, localLane);
-            } else {
-                // Not jumping, position player immediately
-                positionPlayerAtLane(surface, localLane);
-
-                // Reset unused velocity components to prevent sliding
-                resetUnusedVelocityComponents();
-            }
+            // Update target position without immediately moving player
+            setTargetPositionForLane(surface, localLane);
         }
 
         // Mark as moving (for animation)
@@ -361,6 +307,12 @@ export function useGameControls({
             }
 
             if (gameState !== 'playing') return;
+
+            // If falling through a gap, disable all controls
+            if (isFallingThroughGap) {
+                console.log("Cannot control while falling through a gap");
+                return;
+            }
 
             // Get current global lane
             const currentGlobalLane = getGlobalLane(currentSurface, currentLane);
@@ -379,7 +331,7 @@ export function useGameControls({
 
             // Prevent lane changes if already moving between lanes
             // But allow direction keys to be processed for logging
-            if (isMoving.current && !isJumping.current) return;
+            if (isMoving.current) return;
 
             // Handle movement with new global lane system
             if (e.key === 'ArrowRight' || e.key === 'd') {
@@ -394,14 +346,17 @@ export function useGameControls({
 
             // Jump with space
             if (e.key === ' ' && !isJumping.current) {
+                // Don't allow jumping while falling through a gap
+                if (isFallingThroughGap) {
+                    console.log("Cannot jump while falling through a gap");
+                    return;
+                }
+
                 isJumping.current = true;
                 // Apply jump force in direction opposite to gravity
                 const gravityDir = getGravityDirection();
                 playerVelocity.current.x = -gravityDir.x * JUMP_FORCE;
                 playerVelocity.current.y = -gravityDir.y * JUMP_FORCE;
-
-                // Also reset unused velocity components to prevent sliding while jumping
-                resetUnusedVelocityComponents();
             }
         };
 
@@ -417,8 +372,18 @@ export function useGameControls({
                 setCurrentSurface('floor');
                 setCurrentLane(initialLane);
 
-                // Position player
-                positionPlayerAtLane('floor', initialLane);
+                // Set target positions
+                setTargetPositionForLane('floor', initialLane);
+
+                // Position player (immediately for game reset)
+                if (playerRef.current) {
+                    playerRef.current.position.set(
+                        getLanePosition(initialLane, LANES_PER_SURFACE),
+                        -TUNNEL_SIZE / 2 + BALL_RADIUS,
+                        0
+                    );
+                }
+
                 tunnelPosition.current = 0;
 
                 // Reset camera rotation
@@ -451,7 +416,8 @@ export function useGameControls({
         LANE_COUNT,
         JUMP_FORCE,
         TUNNEL_SIZE,
-        BALL_RADIUS
+        BALL_RADIUS,
+        isFallingThroughGap // Added falling state to dependencies
     ]);
 
     return {

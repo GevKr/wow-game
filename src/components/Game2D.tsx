@@ -73,7 +73,6 @@ export function Game2D() {
         rotationProgress,
 
         // World state
-        tunnelRef,
         tunnelPosition,
 
         // Game state
@@ -84,14 +83,12 @@ export function Game2D() {
         gameState,
         setGameState,
         setIsFallingThroughGap,
+        isFallingThroughGap,
         setScore,
 
         // Constants
-        MOVE_SPEED,
         JUMP_FORCE,
-        GRAVITY,
         TUNNEL_SIZE,
-        TILE_SIZE,
         BALL_RADIUS,
         LANE_COUNT,
 
@@ -346,7 +343,28 @@ export function Game2D() {
                 }
             }
 
-            // Handle side movement (X axis for floor, Y axis for walls)
+            // Check for gap detection
+            const onSurface = isPlayerOnTile();
+
+            // If we're near the surface but over a gap, mark as falling through
+            const nearSurface = (
+                (currentSurface === 'floor' || currentSurface === 'ceiling') &&
+                Math.abs(playerPos.y - (currentSurface === 'floor' ?
+                    -TUNNEL_SIZE / 2 + BALL_RADIUS :
+                    TUNNEL_SIZE / 2 - BALL_RADIUS)) < 0.2
+            ) || (
+                    (currentSurface === 'leftWall' || currentSurface === 'rightWall') &&
+                    Math.abs(playerPos.x - (currentSurface === 'leftWall' ?
+                        -TUNNEL_SIZE / 2 + BALL_RADIUS :
+                        TUNNEL_SIZE / 2 - BALL_RADIUS)) < 0.2
+                );
+
+            if (!onSurface && nearSurface && !isFallingThroughGap) {
+                setIsFallingThroughGap(true);
+                console.log("Falling through gap");
+            }
+
+            // Handle side movement (X axis for floor, Y axis for walls) - animated smoothly
             if (isMoving.current) {
                 if (currentSurface === 'floor' || currentSurface === 'ceiling') {
                     // X-axis movement for floor and ceiling
@@ -408,19 +426,6 @@ export function Game2D() {
                     break;
             }
 
-            // Check for gap detection
-            const onSurface = isPlayerOnTile();
-
-            // If we're near the surface but over a gap, mark as falling through
-            const nearSurface = (
-                (collisionAxis === 'y' && Math.abs(playerPos.y - surfaceLevel) < 0.2) ||
-                (collisionAxis === 'x' && Math.abs(playerPos.x - surfaceLevel) < 0.2)
-            );
-
-            if (!onSurface && nearSurface && !isFallingThroughGap) {
-                setIsFallingThroughGap(true);
-            }
-
             // Handle collision with surface - only if not falling through a gap
             if (onSurface && !isFallingThroughGap) {
                 if (collisionAxis === 'y') {
@@ -456,6 +461,12 @@ export function Game2D() {
                     playerPos.x = surfaceLevel;
                     playerVelocity.current.x = 0;
                 }
+            }
+
+            // Check if we've recovered from a fall
+            if (isFallingThroughGap && onSurface) {
+                setIsFallingThroughGap(false);
+                console.log("Recovered from fall");
             }
 
             // Check if player fell too far (in any direction)
