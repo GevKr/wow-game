@@ -16,24 +16,47 @@ const SEGMENT_LENGTH = 10; // Length of each tunnel segment (reduced to 10)
 const VISIBLE_SEGMENTS = 5; // Number of segments to keep visible
 const EXTENSION_THRESHOLD = 40; // When to add a new segment (distance from the end)
 const BALL_RADIUS = 0.25; // Character size
-const COLOR_CHANGE_INTERVAL = 6; // Number of segments before color changes
-const TILE_EMISSIVE_INTENSITY = 0.6; // Base emissive intensity
+const COLOR_CHANGE_INTERVAL = 4; // Number of segments before color changes
+const TILE_EMISSIVE_INTENSITY = 1.2; // Increased base emissive intensity for brighter glow
 const LANE_COUNT = 5; // Number of lanes
 
-// Color schemes
+// Color schemes - bright transition from blue to red
 const COLOR_SCHEMES = [
-    "#00ffff", // Cyan
-    "#ff00ff", // Magenta
-    "#00ff00", // Green
-    "#ff3366", // Pink
-    "#ffff00", // Yellow
-    "#ff6600", // Orange
+    "#00aaff", // Bright blue
+    "#44aaff", // Bright sky blue
+    "#7799ff", // Bright blue-purple
+    "#aa88ff", // Bright purple
+    "#ff66ff", // Bright pink
+    "#ff4477", // Bright pink-red
+    "#ff3333", // Bright red
 ];
 
-// Get color based on segment index
+// Get color based on segment index with interpolation
 const getColorForSegment = (segmentIndex: number) => {
-    const colorIndex = Math.floor(segmentIndex / COLOR_CHANGE_INTERVAL) % COLOR_SCHEMES.length;
-    return COLOR_SCHEMES[colorIndex];
+    const progress = (segmentIndex / COLOR_CHANGE_INTERVAL) % 1;
+    const baseIndex = Math.floor((segmentIndex / COLOR_CHANGE_INTERVAL)) % (COLOR_SCHEMES.length - 1);
+    const nextIndex = (baseIndex + 1) % COLOR_SCHEMES.length;
+
+    // Convert hex colors to RGB for interpolation
+    const color1 = {
+        r: parseInt(COLOR_SCHEMES[baseIndex].slice(1, 3), 16),
+        g: parseInt(COLOR_SCHEMES[baseIndex].slice(3, 5), 16),
+        b: parseInt(COLOR_SCHEMES[baseIndex].slice(5, 7), 16)
+    };
+
+    const color2 = {
+        r: parseInt(COLOR_SCHEMES[nextIndex].slice(1, 3), 16),
+        g: parseInt(COLOR_SCHEMES[nextIndex].slice(3, 5), 16),
+        b: parseInt(COLOR_SCHEMES[nextIndex].slice(5, 7), 16)
+    };
+
+    // Linear interpolation between colors with increased brightness
+    const r = Math.round(color1.r * (1 - progress) + color2.r * progress);
+    const g = Math.round(color1.g * (1 - progress) + color2.g * progress);
+    const b = Math.round(color1.b * (1 - progress) + color2.b * progress);
+
+    // Convert back to hex
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 };
 
 // Lane positions
@@ -790,23 +813,23 @@ export function Game2D() {
             </group>
 
             {/* Dynamic lighting that matches current segment color */}
-            <ambientLight intensity={0.2} />
-            <pointLight position={[0, 0, 2]} intensity={1.2} color="#ffffff" />
+            <ambientLight intensity={0.3} />
+            <pointLight position={[0, 0, 2]} intensity={1.5} color="#ffffff" />
             <pointLight
                 position={[0, -1.5, 0]}
-                intensity={1}
+                intensity={1.2}
                 color={getColorForSegment(Math.floor(tunnelPosition.current / SEGMENT_LENGTH))}
                 distance={5}
             />
             <pointLight
                 position={[2, 0, -10]}
-                intensity={0.8}
+                intensity={1}
                 color={getColorForSegment(Math.floor((tunnelPosition.current + 10) / SEGMENT_LENGTH))}
                 distance={15}
             />
             <pointLight
                 position={[-2, 0, -20]}
-                intensity={0.8}
+                intensity={1}
                 color={getColorForSegment(Math.floor((tunnelPosition.current + 20) / SEGMENT_LENGTH))}
                 distance={15}
             />
