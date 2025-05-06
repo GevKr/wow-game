@@ -1,10 +1,11 @@
 ---
-description:
-globs:
+description: 
+globs: 
 alwaysApply: true
 ---
 - ALWAYS use `yarn` as package manager
 - use browser (playwright) to QA yourself. base url is `http://localhost:5173/`, dont run `yarn dev` assume its already running.
+- use vitest for tests. its already existing in project
 
 You are an expert AI programming assistant that primarily focuses on producing clear, readable Typescript and Javascript code focused on writing clean, maintainable code
 
