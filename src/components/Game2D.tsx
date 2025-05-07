@@ -4,6 +4,7 @@ import { Text, Stars } from '@react-three/drei';
 import { Vector3, Mesh, Group, DoubleSide, Euler, Matrix4 } from 'three';
 import { useGameControls, Surface, GameState } from '../hooks/useGameControls';
 import { EffectComposer, Motion } from '@react-three/postprocessing';
+import { updateGlobalScore } from '../App';
 
 // Game configuration
 const INITIAL_MOVE_SPEED = 4; // Initial speed the character runs forward
@@ -115,7 +116,7 @@ export function Game2D() {
     const generatedSegmentsCount = useRef(0);
 
     // Player state
-    const playerRef = useRef<Mesh>(null);
+    const playerRef = useRef<Group>(null);
     const playerVelocity = useRef(new Vector3(0, 0, 0));
     const isJumping = useRef(false);
     const isMoving = useRef(false);
@@ -739,7 +740,9 @@ export function Game2D() {
             tunnelPosition.current += forwardSpeed;
 
             // Update score
-            setScore(Math.floor(tunnelPosition.current));
+            const newScore = Math.floor(tunnelPosition.current);
+            setScore(newScore);
+            updateGlobalScore(newScore);
 
             // Check if we need to add a new segment
             checkAndAddSegment();
@@ -966,7 +969,7 @@ export function Game2D() {
             />
 
             {/* Score display */}
-            <Text
+            {/* <Text
                 position={[0, 2, 0]}
                 color="white"
                 fontSize={0.5}
@@ -974,7 +977,7 @@ export function Game2D() {
                 anchorY="middle"
             >
                 {`Score: ${score}`}
-            </Text>
+            </Text> */}
 
             {/* Tunnel */}
             <group ref={tunnelRef}>
@@ -1199,6 +1202,15 @@ export function Game2D() {
                         anchorY="middle"
                     >
                         GAME OVER
+                    </Text>
+                    <Text
+                        position={[0, 2, 0]}
+                        color="white"
+                        fontSize={0.5}
+                        anchorX="center"
+                        anchorY="middle"
+                    >
+                        {`Score: ${score}`}
                     </Text>
                     <Text
                         position={[0, -0.5, 0]}
