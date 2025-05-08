@@ -27,36 +27,49 @@ function App() {
       }
       @keyframes pulse {
         0% { transform: scale(1); }
-        50% { transform: scale(1.1); }
+        50% { transform: scale(1.2); }
         100% { transform: scale(1); }
       }
       .score-container {
         display: flex;
         align-items: center;
-        gap: 1rem;
-        background: linear-gradient(45deg, rgba(0,0,0,0.7), rgba(0,0,0,0.3));
+        gap: 1.5rem;
+        background: rgba(0,0,0,0.5);
         padding: 0.75rem 1.5rem;
         border-radius: 1rem;
-        border: 1px solid rgba(255,255,255,0.1);
+        border: 2px solid rgba(100,210,255,0.3);
+        box-shadow: 0 0 20px rgba(0,150,255,0.3);
         backdrop-filter: blur(10px);
       }
       .score-label {
-        font-size: 1.25rem;
-        font-weight: 500;
-        color: rgba(255,255,255,0.8);
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: rgba(255,255,255,0.9);
         text-transform: uppercase;
         letter-spacing: 0.1em;
+        text-shadow: 0 0 10px rgba(100,210,255,0.7);
       }
       #score-display {
-        font-size: 2.5rem;
+        font-size: 3.5rem;
         font-weight: bold;
         color: #fff;
         min-width: 3ch;
         text-align: right;
         animation: glow 2s ease-in-out infinite;
+        text-shadow: 0 0 15px rgba(100,210,255,0.9);
       }
       .score-pulse {
         animation: pulse 0.3s ease-in-out;
+      }
+      .game-title {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1.5rem;
+        background: rgba(0,0,0,0.5);
+        border-radius: 1rem;
+        box-shadow: 0 0 15px rgba(0,0,0,0.4);
+        backdrop-filter: blur(5px);
       }
     `;
     document.head.appendChild(style);
@@ -65,14 +78,14 @@ function App() {
 
   return (
     <div className="w-full h-screen bg-gray-900">
-      <div className="absolute top-4 left-4 z-10  gap-6 p-6 text-white">
-        <div className="flex items-center gap-3">
+      <div className="absolute top-4 left-4 z-10 text-white">
+        <div className="game-title">
           <Gamepad2 className="w-8 h-8" />
           <h1 className="text-3xl font-bold">Disco Runner</h1>
         </div>
       </div>
-      <div className="score-container absolute top-2 right-2 z-10">
-        <span className="score-label">Score</span>
+      <div className="score-container absolute top-4 right-4 z-10">
+        <span className="score-label">SCORE</span>
         <div id="score-display">0</div>
       </div>
       <Scene />

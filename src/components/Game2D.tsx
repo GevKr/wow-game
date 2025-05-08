@@ -1,9 +1,8 @@
 import { useRef, useState, useMemo, useCallback, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Text, Stars } from '@react-three/drei';
-import { Vector3, Mesh, Group, DoubleSide, Euler, Matrix4 } from 'three';
+import { Vector3, Group, DoubleSide, Euler, Matrix4 } from 'three';
 import { useGameControls, Surface, GameState } from '../hooks/useGameControls';
-import { EffectComposer, Motion } from '@react-three/postprocessing';
 import { updateGlobalScore } from '../App';
 
 // Game configuration
@@ -109,6 +108,7 @@ export function Game2D() {
     const isBoostActive = useRef(false);
     const boostTimeout = useRef<NodeJS.Timeout | null>(null);
     const canBoost = useRef(true);
+    const [showGameOver, setShowGameOver] = useState(false);
 
     // Track generated tunnel segments
     const [tunnelSegments, setTunnelSegments] = useState<TunnelSegment[]>([]);
@@ -940,6 +940,7 @@ export function Game2D() {
                 clearTimeout(invincibilityTimer.current);
                 invincibilityTimer.current = null;
             }
+            setShowGameOver(false);
         }
 
         // Cleanup function
@@ -950,6 +951,63 @@ export function Game2D() {
             }
             colorTransitionStart.current = null;
         };
+    }, [gameState]);
+
+    // Add effect to handle game over state
+    useEffect(() => {
+        if (gameState === 'gameOver') {
+            setShowGameOver(true);
+
+            // Add game over styles
+            const style = document.createElement('style');
+            style.textContent = `
+                .game-over-overlay {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 100;
+                    pointer-events: none;
+                }
+                .game-over-text {
+                    color: #ff3333;
+                    font-size: 5rem;
+                    font-weight: bold;
+                    text-shadow: 0 0 20px rgba(255,0,0,0.8), 0 0 30px rgba(255,0,0,0.6);
+                    margin-bottom: 1rem;
+                    animation: pulse 1.5s infinite;
+                }
+                .restart-text {
+                    color: white;
+                    font-size: 2rem;
+                    text-shadow: 0 0 10px rgba(255,255,255,0.8);
+                }
+                @keyframes pulse {
+                    0%, 100% { transform: scale(1); opacity: 1; }
+                    50% { transform: scale(1.05); opacity: 0.9; }
+                }
+            `;
+            document.head.appendChild(style);
+
+            // Create game over container
+            const gameOverEl = document.createElement('div');
+            gameOverEl.className = 'game-over-overlay';
+            gameOverEl.innerHTML = `
+                <div class="game-over-text">GAME OVER</div>
+                <div class="restart-text">Press R to restart</div>
+            `;
+            document.body.appendChild(gameOverEl);
+
+            return () => {
+                document.body.removeChild(gameOverEl);
+                style.remove();
+            };
+        }
     }, [gameState]);
 
     // Flatten tunnel tiles for rendering
@@ -967,17 +1025,6 @@ export function Game2D() {
                 fade
                 speed={1 + (isBoostActive.current ? 2 : 0)}
             />
-
-            {/* Score display */}
-            {/* <Text
-                position={[0, 2, 0]}
-                color="white"
-                fontSize={0.5}
-                anchorX="center"
-                anchorY="middle"
-            >
-                {`Score: ${score}`}
-            </Text> */}
 
             {/* Tunnel */}
             <group ref={tunnelRef}>
@@ -1189,39 +1236,6 @@ export function Game2D() {
                         Arrows to move, Space to jump
                     </Text>
                 </group>
-            )}
-
-            {/* Game over screen */}
-            {gameState === 'gameOver' && (
-                <>
-                    <Text
-                        position={[0, 0.5, 0]}
-                        color="red"
-                        fontSize={1}
-                        anchorX="center"
-                        anchorY="middle"
-                    >
-                        GAME OVER
-                    </Text>
-                    <Text
-                        position={[0, 2, 0]}
-                        color="white"
-                        fontSize={0.5}
-                        anchorX="center"
-                        anchorY="middle"
-                    >
-                        {`Score: ${score}`}
-                    </Text>
-                    <Text
-                        position={[0, -0.5, 0]}
-                        color="white"
-                        fontSize={0.4}
-                        anchorX="center"
-                        anchorY="middle"
-                    >
-                        Press R to restart
-                    </Text>
-                </>
             )}
 
             {/* Player character */}
